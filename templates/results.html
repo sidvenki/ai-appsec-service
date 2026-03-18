@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+{% block title %}Scan Results{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Scan Results</h1>
+    <p id="scan-subtitle">Loading scan #{{ scan_request_id }}...</p>
+</div>
+
+<!-- Status Banner -->
+<div id="status-banner" class="card" style="display:none;">
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+        <div>
+            <strong id="app-name"></strong>
+            <span style="margin-left: 8px;" id="status-badge"></span>
+        </div>
+        <div style="font-size: 12px; color: var(--text-muted);" id="scan-meta"></div>
+    </div>
+</div>
+
+<!-- Metrics Row -->
+<div class="metrics-row" id="metrics-row" style="display:none;">
+    <div class="metric-card">
+        <div class="metric-value total" id="m-total">0</div>
+        <div class="metric-label">Total Findings</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value p1" id="m-p1">0</div>
+        <div class="metric-label">P1 Critical</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value p2" id="m-p2">0</div>
+        <div class="metric-label">P2 High</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value p3" id="m-p3">0</div>
+        <div class="metric-label">P3 Medium</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value traditional" id="m-traditional">0</div>
+        <div class="metric-label">Traditional</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value ai-llm" id="m-ai">0</div>
+        <div class="metric-label">AI / LLM</div>
+    </div>
+</div>
+
+<!-- Results Layout: Table + Detail Panel -->
+<div class="results-layout" id="results-layout" style="display:none;">
+    <!-- Findings Table -->
+    <div class="card" style="padding: 0; overflow: hidden;">
+        <div style="overflow-x: auto;">
+            <table class="findings-table">
+                <thead>
+                    <tr>
+                        <th style="width: 50px;">#</th>
+                        <th style="width: 60px;">Severity</th>
+                        <th style="width: 80px;">Category</th>
+                        <th>Title</th>
+                        <th style="width: 80px;">OWASP</th>
+                        <th style="width: 90px;">Control</th>
+                    </tr>
+                </thead>
+                <tbody id="findings-body">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Detail Panel -->
+    <div class="detail-panel" id="detail-panel">
+        <div class="empty-state" id="detail-empty">
+            Select a finding from the table to view details
+        </div>
+        <div id="detail-content" style="display:none;">
+            <h3 id="d-title"></h3>
+            <div class="detail-tags" id="d-tags"></div>
+
+            <div class="detail-section" style="margin-top: 16px;">
+                <div class="label">Description</div>
+                <div class="value" id="d-description"></div>
+            </div>
+
+            <div class="detail-section">
+                <div class="label">Impact</div>
+                <div class="value" id="d-impact"></div>
+            </div>
+
+            <div class="detail-section">
+                <div class="label">Location</div>
+                <div class="value" style="font-family: var(--font-mono); font-size: 12px;" id="d-location"></div>
+            </div>
+
+            <div class="detail-section">
+                <div class="label">Evidence</div>
+                <div class="evidence-box" id="d-evidence"></div>
+            </div>
+
+            <div class="detail-section">
+                <div class="label">Source</div>
+                <div class="value" id="d-source"></div>
+            </div>
+
+            <div class="remediation-placeholder">
+                <strong>Remediation Guidance</strong><br>
+                Code fix vs compensating controls analysis will appear here in a future release.<br>
+                <em>The AI Assistant module will provide contextual remediation suggestions.</em>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading State -->
+<div class="loading" id="loading-state">
+    <div class="spinner"></div>
+    <p>Loading scan results...</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const scanRequestId = {{ scan_request_id }};
+let findings = [];
+let pollInterval = null;
+
+async function loadResults() {
+    try {
+        const resp = await fetch('/api/scan-requests/' + scanRequestId);
+        if (!resp.ok) throw new Error('Scan request not found');
+        const data = await resp.json();
+
+        const sr = data.scan_request;
+        const run = data.latest_run;
+        const summary = data.finding_summary;
+
+        // Update subtitle
+        document.getElementById('scan-subtitle').textContent =
+            sr.app_name + ' · ' + sr.team + ' · ' + sr.branch;
+
+        // Show status banner
+        const banner = document.getElementById('status-banner');
+        banner.style.display = 'block';
+        document.getElementById('app-name').textContent = sr.app_name;
+
+        if (run) {
+            const statusClass = 'badge-status badge-' + run.status;
+            document.getElementById('status-badge').innerHTML =
+                '<span class="' + statusClass + '">' + run.status.toUpperCase() + '</span>';
+            document.getElementById('scan-meta').textContent =
+                'Started: ' + (run.started_at || '—') +
+                (run.finished_at ? ' · Finished: ' + run.finished_at : '');
+
+            if (run.status === 'running' || run.status === 'pending') {
+                document.getElementById('loading-state').innerHTML =
+                    '<div class="spinner"></div><p>Scan in progress... auto-refreshing every 5 seconds</p>';
+                document.getElementById('loading-state').style.display = 'block';
+                if (!pollInterval) {
+                    pollInterval = setInterval(loadResults, 5000);
+                }
+                return;
+            }
+
+            // Scan completed or failed
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+            document.getElementById('loading-state').style.display = 'none';
+
+            if (run.status === 'completed' && summary) {
+                // Show metrics
+                document.getElementById('metrics-row').style.display = 'grid';
+                document.getElementById('m-total').textContent = summary.total || 0;
+                document.getElementById('m-p1').textContent = summary.p1 || 0;
+                document.getElementById('m-p2').textContent = summary.p2 || 0;
+                document.getElementById('m-p3').textContent = summary.p3 || 0;
+                document.getElementById('m-traditional').textContent = summary.traditional || 0;
+                document.getElementById('m-ai').textContent = summary.ai_llm || 0;
+
+                // Load findings
+                await loadFindings(run.id);
+            }
+        } else {
+            document.getElementById('loading-state').innerHTML =
+                '<div class="spinner"></div><p>Waiting for scan to start...</p>';
+            if (!pollInterval) {
+                pollInterval = setInterval(loadResults, 3000);
+            }
+        }
+    } catch (err) {
+        document.getElementById('loading-state').innerHTML =
+            '<p style="color: var(--p1);">Error: ' + err.message + '</p>';
+    }
+}
+
+async function loadFindings(runId) {
+    const resp = await fetch('/api/scan-runs/' + runId + '/findings');
+    const data = await resp.json();
+    findings = data.findings || [];
+
+    const tbody = document.getElementById('findings-body');
+    tbody.innerHTML = '';
+
+    if (findings.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No findings – the scan completed clean.</td></tr>';
+        document.getElementById('results-layout').style.display = 'grid';
+        return;
+    }
+
+    findings.forEach((f, idx) => {
+        const sevClass = 'badge-' + f.severity.toLowerCase();
+        const catClass = f.category === 'Traditional' ? 'badge-traditional' : 'badge-ai';
+        const catLabel = f.category === 'Traditional' ? 'TRAD' : 'AI';
+
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+            '<td style="color: var(--text-muted);">' + (idx + 1) + '</td>' +
+            '<td><span class="badge ' + sevClass + '">' + f.severity + '</span></td>' +
+            '<td><span class="badge ' + catClass + '">' + catLabel + '</span></td>' +
+            '<td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + escapeHtml(f.short_title) + '</td>' +
+            '<td style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">' + (f.owasp_llm_id || '—') + '</td>' +
+            '<td style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">' + (f.control_id || '—') + '</td>';
+
+        tr.onclick = () => selectFinding(idx, tr);
+        tbody.appendChild(tr);
+    });
+
+    document.getElementById('results-layout').style.display = 'grid';
+
+    // Auto-select first finding
+    if (findings.length > 0) {
+        selectFinding(0, tbody.querySelector('tr'));
+    }
+}
+
+function selectFinding(idx, row) {
+    // Deselect all
+    document.querySelectorAll('.findings-table tr').forEach(r => r.classList.remove('selected'));
+    if (row) row.classList.add('selected');
+
+    const f = findings[idx];
+    document.getElementById('detail-empty').style.display = 'none';
+    document.getElementById('detail-content').style.display = 'block';
+
+    document.getElementById('d-title').textContent = f.short_title;
+
+    // Tags
+    const tags = document.getElementById('d-tags');
+    const sevClass = 'badge-' + f.severity.toLowerCase();
+    const catClass = f.category === 'Traditional' ? 'badge-traditional' : 'badge-ai';
+    tags.innerHTML =
+        '<span class="badge ' + sevClass + '">' + f.severity + '</span>' +
+        '<span class="badge ' + catClass + '">' + f.category + '</span>' +
+        (f.owasp_llm_id ? '<span class="badge" style="background: rgba(255,255,255,0.06); color: var(--text-secondary);">' + f.owasp_llm_id + '</span>' : '') +
+        (f.control_id ? '<span class="badge" style="background: rgba(255,255,255,0.06); color: var(--text-secondary);">' + f.control_id + '</span>' : '');
+
+    document.getElementById('d-description').textContent = f.description || '—';
+    document.getElementById('d-impact').textContent = f.impact || '—';
+    document.getElementById('d-location').textContent = f.location || '—';
+    document.getElementById('d-evidence').textContent = f.evidence_snippet || 'No evidence captured';
+    document.getElementById('d-source').textContent = f.source || 'Unknown';
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Start loading
+loadResults();
+</script>
+{% endblock %}

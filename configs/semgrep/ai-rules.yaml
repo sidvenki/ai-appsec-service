@@ -1,0 +1,113 @@
+rules:
+  # ── LLM01: Prompt Injection Sinks ──────────────────────────────────────
+  - id: ai-prompt-injection-fstring
+    patterns:
+      - pattern: |
+          f"...{$USER_INPUT}..."
+      - metavariable-regex:
+          metavariable: $USER_INPUT
+          regex: (request|user_input|query|body|params|form_data|input_text)
+    message: >
+      User-controlled variable '$USER_INPUT' is interpolated directly into a
+      prompt string. This can allow prompt injection attacks (OWASP LLM01).
+      Sanitise or parameterise user input before including it in prompts.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      owasp_llm: LLM01
+      control_id: PR-LLM-01
+      category: AI/LLM
+
+  - id: ai-prompt-injection-format
+    pattern: |
+      "...".format(..., $USER_INPUT, ...)
+    message: >
+      User input passed to .format() for a string that may be an LLM prompt.
+      Validate and sanitise before inclusion (OWASP LLM01).
+    languages: [python]
+    severity: WARNING
+    metadata:
+      owasp_llm: LLM01
+      control_id: PR-LLM-01
+      category: AI/LLM
+
+  # ── LLM02: Model Output → Dangerous Exec ──────────────────────────────
+  - id: ai-output-exec
+    patterns:
+      - pattern-either:
+          - pattern: exec($RESPONSE)
+          - pattern: eval($RESPONSE)
+    message: >
+      LLM output may flow into exec/eval. Never execute model-generated code
+      without sandboxing (OWASP LLM02).
+    languages: [python]
+    severity: ERROR
+    metadata:
+      owasp_llm: LLM02
+      control_id: PR-LLM-02
+      category: AI/LLM
+
+  - id: ai-output-subprocess
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.run($RESPONSE, ...)
+          - pattern: subprocess.call($RESPONSE, ...)
+          - pattern: os.system($RESPONSE)
+    message: >
+      Model output may be passed to a subprocess/shell command. This is a
+      code-execution risk (OWASP LLM02).
+    languages: [python]
+    severity: ERROR
+    metadata:
+      owasp_llm: LLM02
+      control_id: PR-LLM-02
+      category: AI/LLM
+
+  # ── LLM02: Secrets in Prompts ──────────────────────────────────────────
+  - id: ai-secret-in-prompt
+    pattern: |
+      $FUNC(..., "...$SECRET...", ...)
+    metavariable-regex:
+      metavariable: $SECRET
+      regex: (sk-[a-zA-Z0-9]{20,}|AKIA[0-9A-Z]{16}|ghp_[a-zA-Z0-9]{36})
+    message: >
+      A string that looks like an API key or secret is embedded in a function
+      call that may be part of an LLM prompt. Move secrets to env vars (OWASP LLM02).
+    languages: [python]
+    severity: WARNING
+    metadata:
+      owasp_llm: LLM02
+      control_id: PR-LLM-04
+      category: AI/LLM
+
+  # ── LLM06: Agent Tool Without Validation ───────────────────────────────
+  - id: ai-agent-tool-no-validation
+    pattern: |
+      $TOOL($MODEL_OUTPUT.arguments)
+    message: >
+      Tool invoked directly with model-controlled arguments and no visible
+      validation. Allowlist tool names and validate args (OWASP LLM06).
+    languages: [python]
+    severity: ERROR
+    metadata:
+      owasp_llm: LLM06
+      control_id: PR-LLM-06
+      category: AI/LLM
+
+  # ── LLM10: Unbounded While-True + LLM Call ────────────────────────────
+  - id: ai-unbounded-loop-openai
+    patterns:
+      - pattern: |
+          while True:
+              ...
+              openai.$METHOD.create(...)
+              ...
+    message: >
+      LLM API call inside 'while True' without visible break/max-retry. This
+      can cause unbounded API spend (OWASP LLM10).
+    languages: [python]
+    severity: WARNING
+    metadata:
+      owasp_llm: LLM10
+      control_id: PR-LLM-10
+      category: AI/LLM

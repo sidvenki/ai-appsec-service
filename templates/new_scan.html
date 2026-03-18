@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% set active_page = 'new_scan' %}
+{% block title %}New Scan Request{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>New Scan Request</h1>
+    <p>Submit an application for combined SAST + DAST security assessment</p>
+</div>
+
+<form id="scanForm" onsubmit="submitScan(event)">
+    <!-- Section 1: Requester Details -->
+    <div class="card">
+        <div class="card-header">Requester Details</div>
+        <div class="form-grid">
+            <div class="form-group">
+                <label>Requester Name <span class="required">*</span></label>
+                <input type="text" name="requester_name" required placeholder="e.g. Siddharth Venkataraman">
+            </div>
+            <div class="form-group">
+                <label>Team / Business Unit <span class="required">*</span></label>
+                <input type="text" name="team" required placeholder="e.g. Platform Engineering">
+            </div>
+            <div class="form-group">
+                <label>Email <span class="required">*</span></label>
+                <input type="email" name="email" required placeholder="e.g. name@mastek.com">
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 2: Application Details -->
+    <div class="card">
+        <div class="card-header">Application Details</div>
+        <div class="form-grid">
+            <div class="form-group">
+                <label>Application Name <span class="required">*</span></label>
+                <input type="text" name="app_name" required placeholder="e.g. Customer Support AI Agent">
+            </div>
+            <div class="form-group full-width">
+                <label>Application Description</label>
+                <textarea name="description" placeholder="Brief description of what the application does, its tech stack, and any key integrations..."></textarea>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 3: Source Code & Environment -->
+    <div class="card">
+        <div class="card-header">Source Code & Environment</div>
+        <div class="form-grid">
+            <div class="form-group">
+                <label>Git Repository URL <span class="required">*</span></label>
+                <input type="url" name="repo_url" required placeholder="https://github.com/org/repo.git">
+                <span class="hint">HTTPS or SSH URL to the Git repository</span>
+            </div>
+            <div class="form-group">
+                <label>Exact Branch Name <span class="required">*</span></label>
+                <input type="text" name="branch" required placeholder="e.g. main, develop, feature/auth">
+                <span class="hint">We scan this specific branch as-is</span>
+            </div>
+            <div class="form-group full-width">
+                <label>Environment Base URL(s) for DAST</label>
+                <input type="url" name="env_base_url" placeholder="https://staging-app.mastek.internal:8080">
+                <span class="hint">HTTP/API endpoint(s) where the app is running (for dynamic testing)</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 4: AI / LLM Usage -->
+    <div class="card">
+        <div class="card-header">AI / LLM Usage Profile</div>
+        <div class="form-grid">
+            <div class="form-group full-width">
+                <label>How does this application use LLMs / AI?</label>
+                <textarea name="llm_usage" placeholder="e.g. Uses OpenAI GPT-4 for customer query summarisation. Has a RAG pipeline with internal knowledge base. Agent can search internal databases and send emails."></textarea>
+                <span class="hint">Describe models used, agent capabilities, tools, RAG sources, etc.</span>
+            </div>
+            <div class="form-group full-width">
+                <label>Data Sensitivity Profile</label>
+                <textarea name="data_profile" placeholder="e.g. Handles PII (customer names, emails). Accesses internal financial reports. No health data."></textarea>
+                <span class="hint">What types of data does the application handle or have access to?</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Submit -->
+    <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 8px;">
+        <button type="button" class="btn btn-secondary" onclick="window.location.href='/dashboard'">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="submitBtn">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 1L14 4.5V11.5L8 15L2 11.5V4.5L8 1Z" stroke="currentColor" stroke-width="1.5"/>
+            </svg>
+            Submit Scan Request
+        </button>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function submitScan(event) {
+    event.preventDefault();
+    const form = document.getElementById('scanForm');
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = 'Submitting...';
+
+    const formData = new FormData(form);
+    const payload = {};
+    for (const [key, value] of formData.entries()) {
+        payload[key] = value || null;
+    }
+
+    try {
+        const resp = await fetch('/api/scan-requests', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+
+        if (!resp.ok) {
+            const err = await resp.json();
+            throw new Error(err.detail || 'Failed to create scan request');
+        }
+
+        const data = await resp.json();
+        showToast('Scan request created successfully! Redirecting...', 'success');
+        setTimeout(() => {
+            window.location.href = '/results/' + data.scan_request_id;
+        }, 1500);
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Submit Scan Request';
+    }
+}
+</script>
+{% endblock %}

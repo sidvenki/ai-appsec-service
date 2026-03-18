@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% set active_page = 'dashboard' %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+        <div>
+            <h1>Scan Dashboard</h1>
+            <p>All scan requests submitted to the AI AppSec Service</p>
+        </div>
+        <a href="/new-scan" class="btn btn-primary">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            New Scan
+        </a>
+    </div>
+</div>
+
+<div class="card" style="padding: 0; overflow: hidden;">
+    <table class="dashboard-table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Application</th>
+                <th>Team</th>
+                <th>Branch</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody id="dashboard-body">
+            <tr><td colspan="7" class="loading"><div class="spinner"></div></td></tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadDashboard() {
+    try {
+        const resp = await fetch('/api/scan-requests');
+        const data = await resp.json();
+        const tbody = document.getElementById('dashboard-body');
+        tbody.innerHTML = '';
+
+        const requests = data.scan_requests || [];
+
+        if (requests.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No scan requests yet. <a href="/new-scan">Create one</a>.</td></tr>';
+            return;
+        }
+
+        requests.forEach(req => {
+            const statusClass = 'badge-status badge-' + req.status;
+            const tr = document.createElement('tr');
+            tr.innerHTML =
+                '<td style="color: var(--text-muted); font-family: var(--font-mono); font-size: 12px;">#' + req.id + '</td>' +
+                '<td><strong>' + escapeHtml(req.app_name) + '</strong></td>' +
+                '<td style="color: var(--text-secondary);">' + escapeHtml(req.team) + '</td>' +
+                '<td style="font-family: var(--font-mono); font-size: 12px;">' + escapeHtml(req.branch) + '</td>' +
+                '<td><span class="' + statusClass + '">' + req.status.toUpperCase() + '</span></td>' +
+                '<td style="color: var(--text-muted); font-size: 12px;">' + req.created_at + '</td>' +
+                '<td><a href="/results/' + req.id + '">View</a></td>';
+            tbody.appendChild(tr);
+        });
+    } catch (err) {
+        document.getElementById('dashboard-body').innerHTML =
+            '<tr><td colspan="7" style="color: var(--p1); text-align: center; padding: 20px;">Error loading data</td></tr>';
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+loadDashboard();
+// Auto-refresh
+setInterval(loadDashboard, 10000);
+</script>
+{% endblock %}
