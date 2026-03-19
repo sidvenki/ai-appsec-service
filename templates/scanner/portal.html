@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% set active_page = 'scanner' %}
+{% block title %}Scanner Queue{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="flex-between">
+        <div>
+            <h1>Scan Queue</h1>
+            <p>Review requests, trigger scans, verify fixes, and issue certifications</p>
+        </div>
+        <a href="/new-scan" class="btn btn-primary btn-sm">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            New Scan
+        </a>
+    </div>
+</div>
+
+<!-- Filter bar -->
+<div class="queue-filters" id="filters">
+    <button class="filter-btn active" onclick="setFilter('all')">All</button>
+    <button class="filter-btn" onclick="setFilter('submitted')">Submitted</button>
+    <button class="filter-btn" onclick="setFilter('completed')">Completed</button>
+    <button class="filter-btn" onclick="setFilter('needs-review')">Needs Review</button>
+</div>
+
+<div id="content-area">
+    <div class="loading"><div class="spinner"></div><p>Loading queue...</p></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allRequests = [];
+let currentFilter = 'all';
+
+function setFilter(filter) {
+    currentFilter = filter;
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    event.target.classList.add('active');
+    renderTable();
+}
+
+function renderTable() {
+    let filtered = allRequests;
+    if (currentFilter === 'submitted') {
+        filtered = allRequests.filter(r => r.status === 'submitted');
+    } else if (currentFilter === 'completed') {
+        filtered = allRequests.filter(r => r.status === 'completed');
+    } else if (currentFilter === 'needs-review') {
+        filtered = allRequests.filter(r => {
+            const f = r.findings || {};
+            return r.status === 'completed' && (f.total || 0) > 0 && !r.certified;
+        });
+    }
+
+    const area = document.getElementById('content-area');
+
+    if (filtered.length === 0) {
+        area.innerHTML = '<div class="empty-state">No requests match this filter.</div>';
+        return;
+    }
+
+    let html = '<div class="card" style="padding: 0; overflow: hidden;"><table class="dashboard-table"><thead><tr>';
+    html += '<th>ID</th><th>Application</th><th>Requester</th><th>Branch</th><th>Status</th><th>Findings</th><th>Actions</th>';
+    html += '</tr></thead><tbody>';
+
+    filtered.forEach(req => {
+        const statusClass = 'badge-status badge-' + req.status;
+        const findings = req.findings || {};
+        const openCount = findings.open || 0;
+        const totalCount = findings.total || 0;
+
+        let findingInfo = '<span style="color: var(--text-muted);">—</span>';
+        if (totalCount > 0) {
+            if (openCount === 0) {
+                findingInfo = `<span style="color: var(--success);">All ${totalCount} closed</span>`;
+            } else {
+                findingInfo = `<span style="color: var(--p1);">${openCount} open</span> / ${totalCount}`;
+            }
+        }
+
+        let actions = `<a href="/results/${req.id}">View</a>`;
+        if (req.status === 'submitted') {
+            actions += ` &nbsp;<button class="btn btn-primary btn-xs" onclick="triggerScan(${req.id}, this)">Start Scan</button>`;
+        }
+        if (req.status === 'completed' && totalCount > 0 && openCount === 0 && !req.certified) {
+            actions += ` &nbsp;<button class="btn btn-success btn-xs" onclick="issueCert(${req.id})">Certify</button>`;
+        }
+        if (req.certified) {
+            actions += ' &nbsp;<span class="badge badge-certified">CERTIFIED</span>';
+        }
+
+        html += `<tr>
+            <td style="color: var(--text-muted); font-family: var(--font-mono); font-size: 12px;">#${req.id}</td>
+            <td><strong>${escapeHtml(req.app_name)}</strong><br><span style="font-size: 11px; color: var(--text-muted);">${escapeHtml(req.team)}</span></td>
+            <td style="font-size: 12px; color: var(--text-secondary);">${escapeHtml(req.requester_name || '')}</td>
+            <td style="font-family: var(--font-mono); font-size: 12px;">${escapeHtml(req.branch)}</td>
+            <td><span class="${statusClass}">${req.status.toUpperCase()}</span></td>
+            <td style="font-size: 12px;">${findingInfo}</td>
+            <td>${actions}</td>
+        </tr>`;
+    });
+
+    html += '</tbody></table></div>';
+    area.innerHTML = html;
+}
+
+async function loadQueue() {
+    try {
+        const resp = await fetch('/api/scan-requests');
+        const data = await resp.json();
+        allRequests = data.scan_requests || [];
+        renderTable();
+    } catch (err) {
+        document.getElementById('content-area').innerHTML = 
+            '<div class="empty-state" style="color: var(--p1);">Error loading queue.</div>';
+    }
+}
+
+async function triggerScan(requestId, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Starting...';
+    try {
+        const resp = await fetch(`/api/scan-requests/${requestId}/trigger`, { method: 'POST' });
+        if (!resp.ok) {
+            const err = await resp.json();
+            throw new Error(err.detail || 'Failed to trigger scan');
+        }
+        showToast('Scan triggered successfully', 'success');
+        setTimeout(loadQueue, 2000);
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Start Scan';
+    }
+}
+
+async function issueCert(requestId) {
+    if (!confirm('Issue security certification for this application?')) return;
+    try {
+        const resp = await fetch('/api/certifications', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scan_request_id: requestId }),
+        });
+        if (!resp.ok) {
+            const err = await resp.json();
+            throw new Error(err.detail || 'Failed to issue certification');
+        }
+        showToast('Certification issued', 'success');
+        loadQueue();
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+    }
+}
+
+loadQueue();
+setInterval(loadQueue, 10000);
+</script>
+{% endblock %}

@@ -7,6 +7,18 @@
     <p id="scan-subtitle">Loading scan #{{ scan_request_id }}...</p>
 </div>
 
+<!-- Certification Banner (shown if certified) -->
+<div class="cert-banner" id="cert-banner" style="display: none;">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+        <polyline points="22 4 12 14.01 9 11.01"/>
+    </svg>
+    <div class="cert-info">
+        <div class="cert-title">Security Certification Issued</div>
+        <div class="cert-meta" id="cert-meta"></div>
+    </div>
+</div>
+
 <!-- Status Banner -->
 <div id="status-banner" class="card" style="display:none;">
     <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -37,12 +49,12 @@
         <div class="metric-label">P3 Medium</div>
     </div>
     <div class="metric-card">
-        <div class="metric-value traditional" id="m-traditional">0</div>
-        <div class="metric-label">Traditional</div>
+        <div class="metric-value" style="color: var(--p1);" id="m-open">0</div>
+        <div class="metric-label">Open</div>
     </div>
     <div class="metric-card">
-        <div class="metric-value ai-llm" id="m-ai">0</div>
-        <div class="metric-label">AI / LLM</div>
+        <div class="metric-value success" id="m-closed">0</div>
+        <div class="metric-label">Closed</div>
     </div>
 </div>
 
@@ -54,12 +66,12 @@
             <table class="findings-table">
                 <thead>
                     <tr>
-                        <th style="width: 50px;">#</th>
-                        <th style="width: 60px;">Severity</th>
-                        <th style="width: 80px;">Category</th>
+                        <th style="width: 40px;">#</th>
+                        <th style="width: 55px;">Sev</th>
+                        <th style="width: 55px;">Cat</th>
                         <th>Title</th>
-                        <th style="width: 80px;">OWASP</th>
-                        <th style="width: 90px;">Control</th>
+                        <th style="width: 70px;">Status</th>
+                        <th style="width: 70px;">OWASP</th>
                     </tr>
                 </thead>
                 <tbody id="findings-body">
@@ -77,7 +89,13 @@
             <h3 id="d-title"></h3>
             <div class="detail-tags" id="d-tags"></div>
 
+            <!-- Status + Actions -->
             <div class="detail-section" style="margin-top: 16px;">
+                <div class="label">Status</div>
+                <div id="d-status-area"></div>
+            </div>
+
+            <div class="detail-section">
                 <div class="label">Description</div>
                 <div class="value" id="d-description"></div>
             </div>
@@ -97,10 +115,20 @@
                 <div class="evidence-box" id="d-evidence"></div>
             </div>
 
-            <div class="remediation-placeholder">
-                <strong>Remediation Guidance</strong><br>
-                Code fix vs compensating controls analysis will appear here in a future release.<br>
-                <em>The AI Assistant module will provide contextual remediation suggestions.</em>
+            <!-- AI Remediation Panel -->
+            <div class="ai-panel" id="ai-panel">
+                <div class="ai-panel-header">
+                    <h4>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/>
+                            <line x1="12" y1="17" x2="12.01" y2="17"/>
+                        </svg>
+                        AI Remediation Assistant
+                    </h4>
+                    <button class="btn btn-primary btn-xs" onclick="getAIRemediation()" id="ai-btn">Get Fix Suggestion</button>
+                </div>
+                <div class="ai-response" id="ai-response" style="display: none;"></div>
             </div>
         </div>
     </div>
@@ -111,12 +139,29 @@
     <div class="spinner"></div>
     <p>Loading scan results...</p>
 </div>
+
+<!-- Fix Notes Modal -->
+<div class="modal-overlay" id="fixModal" style="display: none;" onclick="if(event.target===this)document.getElementById('fixModal').style.display='none'">
+    <div class="modal">
+        <h3 id="modal-title">Update Finding Status</h3>
+        <div class="form-group">
+            <label>Notes (optional)</label>
+            <textarea id="modal-notes" placeholder="Describe the fix or reason..." style="width: 100%;"></textarea>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('fixModal').style.display='none'">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="confirmStatusUpdate()" id="modal-confirm-btn">Confirm</button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
 const scanRequestId = {{ scan_request_id }};
 let findings = [];
+let selectedFindingIdx = -1;
+let pendingStatusAction = null;
 let pollInterval = null;
 
 async function loadResults() {
@@ -128,10 +173,20 @@ async function loadResults() {
         const sr = data.scan_request;
         const run = data.latest_run;
         const summary = data.finding_summary;
+        const certs = data.certifications || [];
 
         // Update subtitle
         document.getElementById('scan-subtitle').textContent =
             sr.app_name + ' · ' + sr.team + ' · ' + sr.branch;
+
+        // Certification banner
+        if (certs.length > 0) {
+            const cert = certs[0];
+            document.getElementById('cert-meta').textContent =
+                'Issued by ' + cert.issued_by + ' on ' + cert.issued_at +
+                (cert.valid_until ? ' · Valid until ' + cert.valid_until : '');
+            document.getElementById('cert-banner').style.display = 'flex';
+        }
 
         // Show status banner
         const banner = document.getElementById('status-banner');
@@ -156,7 +211,6 @@ async function loadResults() {
                 return;
             }
 
-            // Scan completed or failed
             if (pollInterval) {
                 clearInterval(pollInterval);
                 pollInterval = null;
@@ -164,24 +218,19 @@ async function loadResults() {
             document.getElementById('loading-state').style.display = 'none';
 
             if (run.status === 'completed' && summary) {
-                // Show metrics
                 document.getElementById('metrics-row').style.display = 'grid';
                 document.getElementById('m-total').textContent = summary.total || 0;
                 document.getElementById('m-p1').textContent = summary.p1 || 0;
                 document.getElementById('m-p2').textContent = summary.p2 || 0;
                 document.getElementById('m-p3').textContent = summary.p3 || 0;
-                document.getElementById('m-traditional').textContent = summary.traditional || 0;
-                document.getElementById('m-ai').textContent = summary.ai_llm || 0;
+                document.getElementById('m-open').textContent = summary.open || 0;
+                document.getElementById('m-closed').textContent = summary.closed || 0;
 
-                // Load findings
                 await loadFindings(run.id);
             }
         } else {
             document.getElementById('loading-state').innerHTML =
-                '<div class="spinner"></div><p>Waiting for scan to start...</p>';
-            if (!pollInterval) {
-                pollInterval = setInterval(loadResults, 3000);
-            }
+                '<p style="color: var(--text-muted);">No scan has been triggered yet for this request.</p>';
         }
     } catch (err) {
         document.getElementById('loading-state').innerHTML =
@@ -207,15 +256,16 @@ async function loadFindings(runId) {
         const sevClass = 'badge-' + f.severity.toLowerCase();
         const catClass = f.category === 'Traditional' ? 'badge-traditional' : 'badge-ai';
         const catLabel = f.category === 'Traditional' ? 'TRAD' : 'AI';
+        const statusClass = 'badge-' + f.status;
 
         const tr = document.createElement('tr');
         tr.innerHTML =
-            '<td style="color: var(--text-muted);">' + (idx + 1) + '</td>' +
+            '<td style="color: var(--text-muted); font-size: 12px;">' + (idx + 1) + '</td>' +
             '<td><span class="badge ' + sevClass + '">' + f.severity + '</span></td>' +
             '<td><span class="badge ' + catClass + '">' + catLabel + '</span></td>' +
-            '<td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + escapeHtml(f.short_title) + '</td>' +
-            '<td style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">' + (f.owasp_llm_id || '—') + '</td>' +
-            '<td style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">' + (f.control_id || '—') + '</td>';
+            '<td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + escapeHtml(f.short_title) + '</td>' +
+            '<td><span class="badge ' + statusClass + '">' + f.status.toUpperCase() + '</span></td>' +
+            '<td style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">' + (f.owasp_llm_id || '—') + '</td>';
 
         tr.onclick = () => selectFinding(idx, tr);
         tbody.appendChild(tr);
@@ -223,24 +273,22 @@ async function loadFindings(runId) {
 
     document.getElementById('results-layout').style.display = 'grid';
 
-    // Auto-select first finding
     if (findings.length > 0) {
         selectFinding(0, tbody.querySelector('tr'));
     }
 }
 
 function selectFinding(idx, row) {
-    // Deselect all
-    document.querySelectorAll('.findings-table tr').forEach(r => r.classList.remove('selected'));
+    document.querySelectorAll('.findings-table tbody tr').forEach(r => r.classList.remove('selected'));
     if (row) row.classList.add('selected');
 
+    selectedFindingIdx = idx;
     const f = findings[idx];
     document.getElementById('detail-empty').style.display = 'none';
     document.getElementById('detail-content').style.display = 'block';
 
     document.getElementById('d-title').textContent = f.short_title;
 
-    // Tags
     const tags = document.getElementById('d-tags');
     const sevClass = 'badge-' + f.severity.toLowerCase();
     const catClass = f.category === 'Traditional' ? 'badge-traditional' : 'badge-ai';
@@ -250,16 +298,135 @@ function selectFinding(idx, row) {
         (f.owasp_llm_id ? '<span class="badge" style="background: rgba(255,255,255,0.06); color: var(--text-secondary);">' + f.owasp_llm_id + '</span>' : '') +
         (f.control_id ? '<span class="badge" style="background: rgba(255,255,255,0.06); color: var(--text-secondary);">' + f.control_id + '</span>' : '');
 
+    // Status area with role-based actions
+    const statusArea = document.getElementById('d-status-area');
+    const statusClass = 'badge-' + f.status;
+    let statusHtml = '<span class="badge ' + statusClass + '" style="font-size: 12px;">' + f.status.toUpperCase() + '</span>';
+
+    if (f.fix_notes) {
+        statusHtml += '<div style="margin-top: 6px; font-size: 12px; color: var(--text-secondary);"><strong>Fix notes:</strong> ' + escapeHtml(f.fix_notes) + '</div>';
+    }
+    if (f.verification_notes) {
+        statusHtml += '<div style="margin-top: 4px; font-size: 12px; color: var(--text-secondary);"><strong>Verification:</strong> ' + escapeHtml(f.verification_notes) + '</div>';
+    }
+
+    // Role-based action buttons
+    if (currentUser) {
+        statusHtml += '<div class="status-actions">';
+        if (currentUser.role === 'requester' && f.status === 'open') {
+            statusHtml += '<button class="btn btn-warning btn-xs" onclick="openStatusModal(' + f.id + ', \'fixed\', \'Mark as Fixed\')">Mark as Fixed</button>';
+        }
+        if ((currentUser.role === 'scanner' || currentUser.role === 'admin')) {
+            if (f.status === 'fixed') {
+                statusHtml += '<button class="btn btn-primary btn-xs" onclick="openStatusModal(' + f.id + ', \'verified\', \'Verify Fix\')">Verify</button>';
+                statusHtml += '<button class="btn btn-secondary btn-xs" onclick="openStatusModal(' + f.id + ', \'open\', \'Reopen Finding\')">Reopen</button>';
+            }
+            if (f.status === 'verified') {
+                statusHtml += '<button class="btn btn-success btn-xs" onclick="openStatusModal(' + f.id + ', \'closed\', \'Close Finding\')">Close</button>';
+            }
+            if (f.status === 'closed') {
+                statusHtml += '<button class="btn btn-secondary btn-xs" onclick="openStatusModal(' + f.id + ', \'open\', \'Reopen Finding\')">Reopen</button>';
+            }
+        }
+        statusHtml += '</div>';
+    }
+    statusArea.innerHTML = statusHtml;
+
     document.getElementById('d-description').textContent = f.description || '—';
     document.getElementById('d-impact').textContent = f.impact || '—';
     document.getElementById('d-location').textContent = f.location || '—';
     document.getElementById('d-evidence').textContent = f.evidence_snippet || 'No evidence captured';
+
+    // Reset AI panel
+    document.getElementById('ai-response').style.display = 'none';
+    document.getElementById('ai-btn').disabled = false;
+    document.getElementById('ai-btn').textContent = 'Get Fix Suggestion';
 }
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+// Status update flow
+function openStatusModal(findingId, newStatus, title) {
+    pendingStatusAction = { findingId, newStatus };
+    document.getElementById('modal-title').textContent = title;
+    document.getElementById('modal-notes').value = '';
+    document.getElementById('fixModal').style.display = 'flex';
+}
+
+async function confirmStatusUpdate() {
+    if (!pendingStatusAction) return;
+    const btn = document.getElementById('modal-confirm-btn');
+    btn.disabled = true;
+    btn.textContent = 'Updating...';
+
+    try {
+        const resp = await fetch(`/api/findings/${pendingStatusAction.findingId}/status`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                status: pendingStatusAction.newStatus,
+                notes: document.getElementById('modal-notes').value || null,
+            }),
+        });
+        if (!resp.ok) {
+            const err = await resp.json();
+            throw new Error(err.detail || 'Update failed');
+        }
+        showToast('Finding status updated', 'success');
+        document.getElementById('fixModal').style.display = 'none';
+        pendingStatusAction = null;
+        // Reload
+        loadResults();
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Confirm';
+    }
+}
+
+// AI Remediation
+async function getAIRemediation() {
+    if (selectedFindingIdx < 0) return;
+    const f = findings[selectedFindingIdx];
+    const btn = document.getElementById('ai-btn');
+    const respDiv = document.getElementById('ai-response');
+
+    btn.disabled = true;
+    btn.textContent = 'Analyzing...';
+    respDiv.style.display = 'block';
+    respDiv.innerHTML = '<div style="color: var(--text-muted);">Generating remediation guidance...</div>';
+
+    try {
+        const resp = await fetch('/api/ai-assist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ finding_id: f.id }),
+        });
+        const data = await resp.json();
+
+        // Simple markdown rendering (bold, code blocks, lists)
+        let content = escapeHtml(data.remediation || 'No guidance available');
+        // Code blocks
+        content = content.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+        content = content.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+        // Inline code
+        content = content.replace(/`([^`]+)`/g, '<code>$1</code>');
+        // Bold
+        content = content.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        // Line breaks
+        content = content.replace(/\n/g, '<br>');
+
+        respDiv.innerHTML = content;
+        if (data.source) {
+            respDiv.innerHTML += '<div style="margin-top: 12px; font-size: 11px; color: var(--text-muted);">Source: ' + data.source + '</div>';
+        }
+
+        btn.textContent = 'Refresh Suggestion';
+        btn.disabled = false;
+    } catch (err) {
+        respDiv.innerHTML = '<div style="color: var(--p1);">Error: ' + err.message + '</div>';
+        btn.textContent = 'Retry';
+        btn.disabled = false;
+    }
 }
 
 // Start loading

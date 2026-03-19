@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Register{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div class="auth-card">
+        <h2>Create an Account</h2>
+        <p class="subtitle">New users are assigned the Requester role by default</p>
+
+        <div class="error-msg" id="error-msg"></div>
+
+        <form id="registerForm" onsubmit="doRegister(event)">
+            <div class="form-group">
+                <label>Display Name <span class="required">*</span></label>
+                <input type="text" name="display_name" required placeholder="e.g. Siddharth V">
+            </div>
+            <div class="form-group">
+                <label>Username <span class="required">*</span></label>
+                <input type="text" name="username" required placeholder="e.g. siddharth.v">
+            </div>
+            <div class="form-group">
+                <label>Email <span class="required">*</span></label>
+                <input type="email" name="email" required placeholder="e.g. name@mastek.com">
+            </div>
+            <div class="form-group">
+                <label>Password <span class="required">*</span></label>
+                <input type="password" name="password" required placeholder="Choose a password" minlength="6">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; margin-top: 8px;" id="registerBtn">
+                Create Account
+            </button>
+        </form>
+
+        <div class="auth-footer">
+            Already have an account? <a href="/login">Sign in</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function doRegister(event) {
+    event.preventDefault();
+    const btn = document.getElementById('registerBtn');
+    const errDiv = document.getElementById('error-msg');
+    btn.disabled = true;
+    btn.textContent = 'Creating account...';
+    errDiv.style.display = 'none';
+
+    const form = document.getElementById('registerForm');
+    const data = Object.fromEntries(new FormData(form));
+
+    try {
+        const resp = await fetch('/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+
+        if (!resp.ok) {
+            const err = await resp.json();
+            throw new Error(err.detail || 'Registration failed');
+        }
+
+        showToast('Account created! Redirecting to login...', 'success');
+        setTimeout(() => { window.location.href = '/login'; }, 1500);
+    } catch (err) {
+        errDiv.textContent = err.message;
+        errDiv.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Create Account';
+    }
+}
+</script>
+{% endblock %}

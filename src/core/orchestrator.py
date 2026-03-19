@@ -93,9 +93,10 @@ def _clone_repo(repo_url: str, branch: str, workspace: str) -> bool:
         return False
 
 
-def run_scan(scan_request_id: int):
+def run_scan(scan_request_id: int, initiated_by: int = None):
     """
     Main scan workflow. Designed to be called asynchronously.
+    initiated_by: user ID of the scanner who triggered the scan (optional).
     """
     db = SessionLocal()
     workspace = None
@@ -114,6 +115,7 @@ def run_scan(scan_request_id: int):
             status="running",
             started_at=datetime.datetime.utcnow(),
             engine_versions=json.dumps(engine_versions),
+            initiated_by=initiated_by,
         )
         db.add(scan_run)
         db.commit()

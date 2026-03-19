@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% set active_page = 'admin' %}
+{% block title %}User Management{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>User Management</h1>
+    <p>Manage user accounts and role assignments</p>
+</div>
+
+<div id="content-area">
+    <div class="loading"><div class="spinner"></div><p>Loading users...</p></div>
+</div>
+
+<!-- Role Edit Modal -->
+<div class="modal-overlay" id="editModal" style="display: none;" onclick="if(event.target===this)closeModal()">
+    <div class="modal">
+        <h3>Edit User</h3>
+        <div id="editForm">
+            <div class="form-group">
+                <label>Display Name</label>
+                <input type="text" id="edit-name" style="width: 100%;">
+            </div>
+            <div class="form-group">
+                <label>Role</label>
+                <select id="edit-role" style="width: 100%;">
+                    <option value="requester">Requester</option>
+                    <option value="scanner">Scanner</option>
+                    <option value="executive">Executive</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="edit-active" style="width: auto; margin-right: 6px;">
+                    Account Active
+                </label>
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="saveUser()" id="saveBtn">Save Changes</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let editUserId = null;
+
+async function loadUsers() {
+    try {
+        const resp = await fetch('/api/admin/users');
+        if (!resp.ok) {
+            if (resp.status === 403) throw new Error('Admin access required');
+            throw new Error('Failed to load users');
+        }
+        const data = await resp.json();
+        const users = data.users || [];
+        const area = document.getElementById('content-area');
+
+        let html = '<div class="card" style="padding: 0; overflow: hidden;"><table class="data-table"><thead><tr>';
+        html += '<th>ID</th><th>Username</th><th>Display Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last Login</th><th></th>';
+        html += '</tr></thead><tbody>';
+
+        users.forEach(u => {
+            const roleClass = 'role-badge role-' + u.role;
+            const statusBadge = u.is_active ?
+                '<span style="color: var(--success); font-size: 12px;">Active</span>' :
+                '<span style="color: var(--p1); font-size: 12px;">Disabled</span>';
+
+            html += `<tr>
+                <td style="color: var(--text-muted); font-family: var(--font-mono); font-size: 12px;">${u.id}</td>
+                <td style="font-weight: 600;">${escapeHtml(u.username)}</td>
+                <td>${escapeHtml(u.display_name)}</td>
+                <td style="color: var(--text-secondary); font-size: 12px;">${escapeHtml(u.email)}</td>
+                <td><span class="${roleClass}">${u.role.toUpperCase()}</span></td>
+                <td>${statusBadge}</td>
+                <td style="color: var(--text-muted); font-size: 12px;">${u.last_login || 'Never'}</td>
+                <td><button class="btn btn-secondary btn-xs" onclick='openEdit(${JSON.stringify(u)})'>Edit</button></td>
+            </tr>`;
+        });
+
+        html += '</tbody></table></div>';
+        area.innerHTML = html;
+    } catch (err) {
+        document.getElementById('content-area').innerHTML =
+            `<div class="empty-state" style="color: var(--p1);">${err.message}</div>`;
+    }
+}
+
+function openEdit(user) {
+    editUserId = user.id;
+    document.getElementById('edit-name').value = user.display_name;
+    document.getElementById('edit-role').value = user.role;
+    document.getElementById('edit-active').checked = user.is_active;
+    document.getElementById('editModal').style.display = 'flex';
+}
+
+function closeModal() {
+    document.getElementById('editModal').style.display = 'none';
+    editUserId = null;
+}
+
+async function saveUser() {
+    if (!editUserId) return;
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    try {
+        const resp = await fetch(`/api/admin/users/${editUserId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                display_name: document.getElementById('edit-name').value,
+                role: document.getElementById('edit-role').value,
+                is_active: document.getElementById('edit-active').checked,
+            }),
+        });
+        if (!resp.ok) {
+            const err = await resp.json();
+            throw new Error(err.detail || 'Update failed');
+        }
+        showToast('User updated', 'success');
+        closeModal();
+        loadUsers();
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save Changes';
+    }
+}
+
+loadUsers();
+</script>
+{% endblock %}

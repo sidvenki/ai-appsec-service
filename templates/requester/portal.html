@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% set active_page = 'requester' %}
+{% block title %}My Requests{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="flex-between">
+        <div>
+            <h1>My Scan Requests</h1>
+            <p>View your submitted applications and track finding remediation</p>
+        </div>
+        <a href="/new-scan" class="btn btn-primary">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            New Request
+        </a>
+    </div>
+</div>
+
+<div id="content-area">
+    <div class="loading"><div class="spinner"></div><p>Loading your requests...</p></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadRequests() {
+    try {
+        const resp = await fetch('/api/scan-requests');
+        const data = await resp.json();
+        const requests = data.scan_requests || [];
+        const area = document.getElementById('content-area');
+
+        if (requests.length === 0) {
+            area.innerHTML = '<div class="empty-state">No scan requests yet. <a href="/new-scan" style="color: var(--accent);">Submit your first one</a>.</div>';
+            return;
+        }
+
+        let html = '<div class="card" style="padding: 0; overflow: hidden;"><table class="dashboard-table"><thead><tr>';
+        html += '<th>ID</th><th>Application</th><th>Branch</th><th>Scan Status</th><th>Findings</th><th>Certified</th><th></th>';
+        html += '</tr></thead><tbody>';
+
+        requests.forEach(req => {
+            const statusClass = 'badge-status badge-' + req.status;
+            const findings = req.findings || {};
+            const findingInfo = findings.total ? 
+                `<span style="color: var(--p1);">${findings.open || 0} open</span> / ${findings.total} total` : 
+                '<span style="color: var(--text-muted);">—</span>';
+            const certBadge = req.certified ? 
+                '<span class="badge badge-certified">CERTIFIED</span>' : 
+                '<span style="color: var(--text-muted); font-size: 12px;">—</span>';
+
+            html += `<tr>
+                <td style="color: var(--text-muted); font-family: var(--font-mono); font-size: 12px;">#${req.id}</td>
+                <td><strong>${escapeHtml(req.app_name)}</strong><br><span style="font-size: 11px; color: var(--text-muted);">${escapeHtml(req.team)}</span></td>
+                <td style="font-family: var(--font-mono); font-size: 12px;">${escapeHtml(req.branch)}</td>
+                <td><span class="${statusClass}">${req.status.toUpperCase()}</span></td>
+                <td style="font-size: 12px;">${findingInfo}</td>
+                <td>${certBadge}</td>
+                <td><a href="/results/${req.id}">View</a></td>
+            </tr>`;
+        });
+
+        html += '</tbody></table></div>';
+        area.innerHTML = html;
+    } catch (err) {
+        document.getElementById('content-area').innerHTML = 
+            '<div class="empty-state" style="color: var(--p1);">Error loading data. <a href="/login" style="color: var(--accent);">Please sign in</a>.</div>';
+    }
+}
+
+loadRequests();
+</script>
+{% endblock %}

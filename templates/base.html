@@ -20,9 +20,44 @@
             </span>
             AI AppSec Service
         </a>
-        <div class="nav-links">
-            <a href="/dashboard" {% if active_page == 'dashboard' %}class="active"{% endif %}>Dashboard</a>
-            <a href="/new-scan" {% if active_page == 'new_scan' %}class="active"{% endif %}>New Scan</a>
+
+        <div class="nav-center">
+            {% if user %}
+                {% if user.role == 'requester' %}
+                    <a href="/requester" class="{% if active_page == 'requester' %}active{% endif %}">My Requests</a>
+                    <a href="/new-scan" class="{% if active_page == 'new_scan' %}active{% endif %}">New Scan</a>
+                {% elif user.role == 'scanner' %}
+                    <a href="/scanner" class="{% if active_page == 'scanner' %}active{% endif %}">Scan Queue</a>
+                    <a href="/new-scan" class="{% if active_page == 'new_scan' %}active{% endif %}">New Scan</a>
+                {% elif user.role == 'executive' %}
+                    <a href="/executive" class="{% if active_page == 'executive' %}active{% endif %}">Dashboard</a>
+                {% elif user.role == 'admin' %}
+                    <a href="/scanner" class="{% if active_page == 'scanner' %}active{% endif %}">Scan Queue</a>
+                    <a href="/executive" class="{% if active_page == 'executive' %}active{% endif %}">Dashboard</a>
+                    <a href="/admin" class="{% if active_page == 'admin' %}active{% endif %}">Admin</a>
+                {% endif %}
+            {% else %}
+                <a href="/login">Login</a>
+                <a href="/new-scan">New Scan</a>
+            {% endif %}
+        </div>
+
+        <div class="nav-right">
+            {% if user %}
+                <div class="user-pill">
+                    <span class="role-badge role-{{ user.role }}">{{ user.role | upper }}</span>
+                    <span class="user-name">{{ user.display_name }}</span>
+                    <button onclick="doLogout()" class="btn-icon" title="Logout">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+                            <polyline points="16 17 21 12 16 7"/>
+                            <line x1="21" y1="12" x2="9" y2="12"/>
+                        </svg>
+                    </button>
+                </div>
+            {% else %}
+                <a href="/login" class="btn btn-primary btn-sm">Login</a>
+            {% endif %}
         </div>
     </nav>
 
@@ -39,6 +74,20 @@
             toast.className = 'toast ' + type + ' show';
             setTimeout(() => { toast.className = 'toast'; }, 4000);
         }
+
+        async function doLogout() {
+            await fetch('/api/auth/logout', { method: 'POST' });
+            window.location.href = '/login';
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Check auth status
+        let currentUser = {{ user | tojson | safe if user else 'null' }};
     </script>
     {% block scripts %}{% endblock %}
 </body>

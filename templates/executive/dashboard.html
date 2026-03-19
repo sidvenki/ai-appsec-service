@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% set active_page = 'executive' %}
+{% block title %}Enterprise Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Enterprise Security Posture</h1>
+    <p>Aggregate view of all application security assessments</p>
+</div>
+
+<!-- Top Metrics -->
+<div class="metrics-row" id="top-metrics" style="display: none;">
+    <div class="metric-card">
+        <div class="metric-value total" id="m-apps">0</div>
+        <div class="metric-label">Applications</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value accent" id="m-scans">0</div>
+        <div class="metric-label">Scans Completed</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value total" id="m-findings">0</div>
+        <div class="metric-label">Total Findings</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value success" id="m-closure">0%</div>
+        <div class="metric-label">Closure Rate</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value success" id="m-certs">0</div>
+        <div class="metric-label">Active Certifications</div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="dashboard-grid" id="charts-area" style="display: none;">
+    <!-- Severity Distribution -->
+    <div class="card">
+        <div class="card-header">Finding Severity Distribution</div>
+        <div class="chart-placeholder">
+            <div class="bar-chart" id="severity-chart"></div>
+        </div>
+    </div>
+
+    <!-- Status Distribution -->
+    <div class="card">
+        <div class="card-header">Remediation Progress</div>
+        <div class="chart-placeholder">
+            <div class="bar-chart" id="status-chart"></div>
+        </div>
+        <div class="progress-bar" style="margin-top: 16px;">
+            <div class="progress-fill" id="closure-bar" style="width: 0%; background: var(--success);"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 11px; color: var(--text-muted);">
+            <span>Open</span>
+            <span id="closure-pct">0% resolved</span>
+        </div>
+    </div>
+
+    <!-- Category Split -->
+    <div class="card">
+        <div class="card-header">Traditional vs AI/LLM Findings</div>
+        <div class="chart-placeholder">
+            <div class="bar-chart" id="category-chart"></div>
+        </div>
+    </div>
+
+    <!-- Top Open Risks -->
+    <div class="card">
+        <div class="card-header">Top Open Risk Types</div>
+        <div id="risk-list" style="min-height: 180px;"></div>
+    </div>
+</div>
+
+<!-- Per-App Breakdown -->
+<div class="card" id="app-table-card" style="padding: 0; overflow: hidden; display: none;">
+    <div style="padding: 16px 16px 0;">
+        <div class="card-header" style="border-bottom: none; padding-bottom: 0;">Per-Application Breakdown</div>
+    </div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Application</th>
+                <th>Team</th>
+                <th>P1</th>
+                <th>P2</th>
+                <th>P3</th>
+                <th>Open</th>
+                <th>Closed</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody id="app-tbody"></tbody>
+    </table>
+</div>
+
+<div class="loading" id="loading-state">
+    <div class="spinner"></div>
+    <p>Loading enterprise data...</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function buildBarChart(containerId, items) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const maxVal = Math.max(...items.map(i => i.value), 1);
+
+    container.innerHTML = items.map(item => {
+        const height = Math.max((item.value / maxVal) * 120, 4);
+        return `<div class="bar-item">
+            <div class="bar-value" style="color: ${item.color};">${item.value}</div>
+            <div class="bar" style="height: ${height}px; background: ${item.color};"></div>
+            <div class="bar-label">${item.label}</div>
+        </div>`;
+    }).join('');
+}
+
+async function loadDashboard() {
+    try {
+        const [aggResp, appsResp] = await Promise.all([
+            fetch('/api/dashboard/aggregate'),
+            fetch('/api/dashboard/apps'),
+        ]);
+        const agg = await aggResp.json();
+        const appsData = await appsResp.json();
+
+        const o = agg.overview;
+        const sev = agg.severity_distribution;
+        const stat = agg.status_distribution;
+        const cat = agg.category_distribution;
+
+        // Top metrics
+        document.getElementById('m-apps').textContent = o.total_applications;
+        document.getElementById('m-scans').textContent = o.total_scans_completed;
+        document.getElementById('m-findings').textContent = o.total_findings;
+        document.getElementById('m-closure').textContent = o.closure_rate + '%';
+        document.getElementById('m-certs').textContent = o.active_certifications;
+        document.getElementById('top-metrics').style.display = 'grid';
+
+        // Severity chart
+        buildBarChart('severity-chart', [
+            { label: 'P1', value: sev.P1 || 0, color: 'var(--p1)' },
+            { label: 'P2', value: sev.P2 || 0, color: 'var(--p2)' },
+            { label: 'P3', value: sev.P3 || 0, color: 'var(--p3)' },
+        ]);
+
+        // Status chart
+        buildBarChart('status-chart', [
+            { label: 'Open', value: stat.open || 0, color: 'var(--p1)' },
+            { label: 'Fixed', value: stat.fixed || 0, color: 'var(--p2)' },
+            { label: 'Verified', value: stat.verified || 0, color: 'var(--accent)' },
+            { label: 'Closed', value: stat.closed || 0, color: 'var(--success)' },
+        ]);
+
+        // Closure progress
+        document.getElementById('closure-bar').style.width = o.closure_rate + '%';
+        document.getElementById('closure-pct').textContent = o.closure_rate + '% resolved';
+
+        // Category chart
+        buildBarChart('category-chart', [
+            { label: 'Traditional', value: cat.Traditional || 0, color: 'var(--traditional)' },
+            { label: 'AI/LLM', value: cat['AI/LLM'] || 0, color: 'var(--ai-llm)' },
+        ]);
+
+        // Top risks
+        const riskList = document.getElementById('risk-list');
+        const risks = agg.top_open_risks || [];
+        if (risks.length === 0) {
+            riskList.innerHTML = '<div style="padding: 20px; color: var(--text-muted); font-size: 13px; text-align: center;">No open risks</div>';
+        } else {
+            const maxRisk = risks[0].count;
+            riskList.innerHTML = risks.map(r => {
+                const pct = Math.round((r.count / maxRisk) * 100);
+                return `<div style="padding: 8px 0; border-bottom: 1px solid var(--border);">
+                    <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
+                        <span>${escapeHtml(r.risk_type)}</span>
+                        <span style="color: var(--p1); font-weight: 600;">${r.count}</span>
+                    </div>
+                    <div class="progress-bar"><div class="progress-fill" style="width: ${pct}%; background: var(--p1);"></div></div>
+                </div>`;
+            }).join('');
+        }
+
+        document.getElementById('charts-area').style.display = 'grid';
+
+        // Per-app table
+        const apps = appsData.apps || [];
+        const tbody = document.getElementById('app-tbody');
+        tbody.innerHTML = '';
+
+        apps.forEach(app => {
+            const f = app.findings || {};
+            const certBadge = app.certified ?
+                '<span class="badge badge-certified">CERTIFIED</span>' :
+                (app.scan_status === 'completed' ? '<span style="color: var(--text-muted); font-size: 12px;">Pending</span>' : '');
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><a href="/results/${app.id}"><strong>${escapeHtml(app.app_name)}</strong></a></td>
+                <td style="color: var(--text-secondary); font-size: 12px;">${escapeHtml(app.team)}</td>
+                <td style="color: var(--p1); font-weight: 600;">${f.p1 || 0}</td>
+                <td style="color: var(--p2); font-weight: 600;">${f.p2 || 0}</td>
+                <td style="color: var(--p3); font-weight: 600;">${f.p3 || 0}</td>
+                <td style="color: ${(f.open || 0) > 0 ? 'var(--p1)' : 'var(--text-muted)'}; font-weight: 600;">${f.open || 0}</td>
+                <td style="color: var(--success); font-weight: 600;">${f.closed || 0}</td>
+                <td>${certBadge}</td>`;
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('app-table-card').style.display = 'block';
+        document.getElementById('loading-state').style.display = 'none';
+
+    } catch (err) {
+        document.getElementById('loading-state').innerHTML =
+            '<p style="color: var(--p1);">Error loading dashboard data.</p>';
+    }
+}
+
+loadDashboard();
+setInterval(loadDashboard, 30000);
+</script>
+{% endblock %}
