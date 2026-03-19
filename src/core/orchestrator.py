@@ -189,7 +189,6 @@ def run_scan(scan_request_id: int):
                 risk_type=fd.get("risk_type", "Unknown"),
                 owasp_llm_id=fd.get("owasp_llm_id"),
                 control_id=fd.get("control_id"),
-                source=fd.get("source", "Unknown"),
                 short_title=fd.get("short_title", "Untitled finding"),
                 description=fd.get("description", ""),
                 impact=fd.get("impact", ""),

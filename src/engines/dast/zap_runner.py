@@ -88,7 +88,6 @@ def run_zap(target_url: str) -> list[dict]:
 
                 findings.append({
                     **classification,
-                    "source": "Unknown",
                     "short_title": f"ZAP: {name}",
                     "description": desc[:1000],
                     "impact": solution[:500] if solution else f"DAST finding: {name}",

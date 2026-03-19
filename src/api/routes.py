@@ -74,7 +74,6 @@ class FindingResponse(BaseModel):
     risk_type: str
     owasp_llm_id: Optional[str]
     control_id: Optional[str]
-    source: str
     short_title: str
     description: Optional[str]
     impact: Optional[str]
@@ -198,7 +197,6 @@ def get_findings(scan_run_id: int, db: Session = Depends(get_db)):
                 "risk_type": f.risk_type,
                 "owasp_llm_id": f.owasp_llm_id,
                 "control_id": f.control_id,
-                "source": f.source,
                 "short_title": f.short_title,
                 "description": f.description,
                 "impact": f.impact,

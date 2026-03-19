@@ -234,7 +234,6 @@ def run_ai_dast(target_url: str) -> list[dict]:
                 cls = classify_ai_dast("prompt_injection_success")
                 findings.append({
                     **cls,
-                    "source": "Unknown",
                     "short_title": f"Prompt injection: {probe['name']}",
                     "description": (
                         f"The target responded to prompt injection probe '{probe['name']}' "
@@ -252,7 +251,6 @@ def run_ai_dast(target_url: str) -> list[dict]:
                 cls = classify_ai_dast("jailbreak_success")
                 findings.append({
                     **cls,
-                    "source": "Unknown",
                     "short_title": f"Jailbreak: {probe['name']}",
                     "description": (
                         f"The target responded to jailbreak probe '{probe['name']}' "
@@ -270,7 +268,6 @@ def run_ai_dast(target_url: str) -> list[dict]:
                 cls = classify_ai_dast("rag_poisoning")
                 findings.append({
                     **cls,
-                    "source": "Unknown",
                     "short_title": f"RAG poisoning: {probe['name']}",
                     "description": (
                         f"The target appeared to accept crafted context in probe '{probe['name']}', "
@@ -288,7 +285,6 @@ def run_ai_dast(target_url: str) -> list[dict]:
                 cls = classify_ai_dast("agent_tool_abuse")
                 findings.append({
                     **cls,
-                    "source": "Unknown",
                     "short_title": f"Agent abuse: {probe['name']}",
                     "description": (
                         f"The target responded to agent abuse probe '{probe['name']}' "
@@ -307,7 +303,6 @@ def run_ai_dast(target_url: str) -> list[dict]:
                 cls = classify_ai_dast("unbounded_consumption")
                 findings.append({
                     **cls,
-                    "source": "Unknown",
                     "short_title": f"Unbounded consumption: {probe['name']}",
                     "description": (
                         f"The target took {elapsed:.1f}s to respond to probe '{probe['name']}' "
@@ -329,8 +324,7 @@ def run_ai_dast(target_url: str) -> list[dict]:
                     cls = classify_ai_dast("misinformation")
                     findings.append({
                         **cls,
-                        "source": "Unknown",
-                        "short_title": f"Misinformation: {probe['name']}",
+                            "short_title": f"Misinformation: {probe['name']}",
                         "description": (
                             f"The target did not provide the expected factual answer "
                             f"(expected: '{probe['expected_answer']}') for probe '{probe['name']}'."
@@ -344,8 +338,7 @@ def run_ai_dast(target_url: str) -> list[dict]:
                     cls = classify_ai_dast("misinformation")
                     findings.append({
                         **cls,
-                        "source": "Unknown",
-                        "short_title": f"Misinformation: {probe['name']}",
+                            "short_title": f"Misinformation: {probe['name']}",
                         "description": (
                             f"The target appeared to fabricate a specific citation in response "
                             f"to probe '{probe['name']}'. No such reference exists."

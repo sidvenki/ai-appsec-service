@@ -60,7 +60,6 @@ def run_bandit(workspace_path: str) -> list[dict]:
 
             findings.append({
                 **classification,
-                "source": "Unknown",
                 "short_title": f"Bandit {test_id}: {test_name}",
                 "description": text,
                 "impact": f"{classification['risk_type']} (Confidence: {confidence})",

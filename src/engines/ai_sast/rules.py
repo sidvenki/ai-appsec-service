@@ -137,8 +137,7 @@ def _check_prompt_injection(filepath, content, lines, findings):
                         cls = classify_ai_sast("prompt_injection_sink")
                         findings.append({
                             **cls,
-                            "source": "Unknown",
-                            "short_title": "User input interpolated into LLM prompt",
+                                    "short_title": "User input interpolated into LLM prompt",
                             "description": (
                                 "User-controlled input is directly interpolated into a prompt string "
                                 "via f-string, .format(), or concatenation. This can allow prompt injection."
@@ -176,8 +175,7 @@ def _check_model_output_exec(filepath, content, lines, findings):
                         cls = classify_ai_sast("model_output_exec")
                         findings.append({
                             **cls,
-                            "source": "Unknown",
-                            "short_title": "Model output used in exec/eval/subprocess/SQL",
+                                    "short_title": "Model output used in exec/eval/subprocess/SQL",
                             "description": (
                                 f"Variable '{var}' (likely containing LLM output) is passed to "
                                 f"a dangerous function ({exec_pat.strip('(')}). "
@@ -207,8 +205,7 @@ def _check_model_output_html(filepath, content, lines, findings):
                     cls = classify_ai_sast("model_output_html")
                     findings.append({
                         **cls,
-                        "source": "Unknown",
-                        "short_title": "Model output rendered as unescaped HTML",
+                            "short_title": "Model output rendered as unescaped HTML",
                         "description": (
                             "LLM output appears to be rendered as raw HTML without escaping. "
                             "This can lead to XSS if the model output contains malicious scripts."
@@ -244,8 +241,7 @@ def _check_insecure_agent_tool(filepath, content, lines, findings):
                     cls = classify_ai_sast("insecure_agent_tool")
                     findings.append({
                         **cls,
-                        "source": "Unknown",
-                        "short_title": "Insecure agent tool invocation",
+                            "short_title": "Insecure agent tool invocation",
                         "description": (
                             "An agent tool is invoked with arguments that appear to come from "
                             "model output, with no visible input validation or allowlisting."
@@ -273,7 +269,6 @@ def _check_secrets_in_prompt(filepath, content, lines, findings):
                 cls = classify_ai_sast("secrets_in_prompt")
                 findings.append({
                     **cls,
-                    "source": "Unknown",
                     "short_title": "Secret or API key found in LLM prompt/context",
                     "description": (
                         "A string that looks like an API key, password, or secret token was found "
@@ -308,7 +303,6 @@ def _check_unbounded_loops(filepath, content, lines, findings):
                 cls = classify_ai_sast("unbounded_llm_loop")
                 findings.append({
                     **cls,
-                    "source": "Unknown",
                     "short_title": "Unbounded loop/retry around LLM call",
                     "description": (
                         "An LLM API call is inside a loop with no clear upper bound. "

@@ -97,11 +97,6 @@
                 <div class="evidence-box" id="d-evidence"></div>
             </div>
 
-            <div class="detail-section">
-                <div class="label">Source</div>
-                <div class="value" id="d-source"></div>
-            </div>
-
             <div class="remediation-placeholder">
                 <strong>Remediation Guidance</strong><br>
                 Code fix vs compensating controls analysis will appear here in a future release.<br>
@@ -259,7 +254,6 @@ function selectFinding(idx, row) {
     document.getElementById('d-impact').textContent = f.impact || '—';
     document.getElementById('d-location').textContent = f.location || '—';
     document.getElementById('d-evidence').textContent = f.evidence_snippet || 'No evidence captured';
-    document.getElementById('d-source').textContent = f.source || 'Unknown';
 }
 
 function escapeHtml(text) {

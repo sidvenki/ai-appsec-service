@@ -6,7 +6,7 @@ Unified impact-centric scheme:
   P2: strong security or trust degradation
   P3: real weakness with limited impact
 
-Each finding stores: severity, category, risk_type, owasp_llm_id, control_id, source.
+Each finding stores: severity, category, risk_type, owasp_llm_id, control_id.
 """
 
 # ---------------------------------------------------------------------------

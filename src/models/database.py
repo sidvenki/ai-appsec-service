@@ -69,8 +69,6 @@ class Finding(Base):
     risk_type = Column(String(200), nullable=False)     # e.g. "SQL injection", "Prompt injection"
     owasp_llm_id = Column(String(20), nullable=True)    # e.g. LLM01, LLM06 or null
     control_id = Column(String(50), nullable=True)      # e.g. PR-LLM-03, TRAD-WEB-01
-    source = Column(String(50), default="Unknown")      # Human | Computer | Unknown
-
     short_title = Column(String(500), nullable=False)
     description = Column(Text, nullable=True)
     impact = Column(Text, nullable=True)

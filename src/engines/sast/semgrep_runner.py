@@ -54,7 +54,6 @@ def run_semgrep(workspace_path: str) -> list[dict]:
 
             findings.append({
                 **classification,
-                "source": "Unknown",
                 "short_title": f"Semgrep: {rule_id}",
                 "description": message,
                 "impact": f"Potential {classification['risk_type'].lower()} vulnerability detected by static analysis.",

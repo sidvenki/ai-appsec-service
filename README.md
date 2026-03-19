@@ -153,7 +153,6 @@ GET /api/scan-runs/{run_id}/findings
       "risk_type": "Prompt injection sink",
       "owasp_llm_id": "LLM01",
       "control_id": "PR-LLM-01",
-      "source": "Unknown",
       "short_title": "User input interpolated into LLM prompt",
       "description": "User-controlled input is directly interpolated...",
       "impact": "An attacker can manipulate the LLM's behaviour...",
@@ -183,7 +182,6 @@ Each finding includes:
 | `risk_type` | e.g. "SQL injection", "Prompt injection" |
 | `owasp_llm_id` | LLM01, LLM06, etc. (null for traditional) |
 | `control_id` | e.g. PR-LLM-03, TRAD-WEB-01 |
-| `source` | "Human", "Computer", or "Unknown" |
 | `short_title` | One-line finding title |
 | `description` | Detailed description |
 | `impact` | Impact statement |
