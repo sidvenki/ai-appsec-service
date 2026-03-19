@@ -1,0 +1,54 @@
+# ──────────────────────────────────────────────────────────────────────────
+# Docker Compose — AI AppSec Service + PostgreSQL
+# Use for internal deployment or local testing with PostgreSQL
+#
+# Start:  docker-compose up -d
+# Stop:   docker-compose down
+# Logs:   docker-compose logs -f app
+# Reset:  docker-compose down -v  (deletes database volume)
+# ──────────────────────────────────────────────────────────────────────────
+
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: ai-appsec-app
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://appsec:${DB_PASSWORD:-AppsecAlpha2026!}@db:5432/ai_appsec
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - appsec-net
+
+  db:
+    image: postgres:16-alpine
+    container_name: ai-appsec-db
+    environment:
+      - POSTGRES_USER=appsec
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-AppsecAlpha2026!}
+      - POSTGRES_DB=ai_appsec
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appsec -d ai_appsec"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - appsec-net
+
+volumes:
+  pgdata:
+
+networks:
+  appsec-net:
+    driver: bridge

@@ -1,6 +1,9 @@
 """
 SQLAlchemy models and database initialization for AI AppSec Service.
-Uses SQLite for the alpha version.
+
+Supports SQLite (development) and PostgreSQL (production).
+Set DATABASE_URL environment variable to use PostgreSQL:
+  export DATABASE_URL=postgresql://user:password@host:5432/ai_appsec
 
 Models:
   - User: local auth with role-based access
@@ -12,6 +15,7 @@ Models:
 
 import datetime
 import hashlib
+import os
 import secrets
 from sqlalchemy import (
     Column, Integer, String, Text, DateTime, ForeignKey, Boolean, create_engine
@@ -182,9 +186,15 @@ class Certification(Base):
 # Database setup helpers
 # ---------------------------------------------------------------------------
 
-DATABASE_URL = "sqlite:///ai_appsec.db"
+# Database URL: defaults to SQLite for local dev, override with env var for production
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///ai_appsec.db")
 
-engine = create_engine(DATABASE_URL, echo=False, connect_args={"check_same_thread": False})
+# SQLite-specific connect args
+connect_args = {}
+if DATABASE_URL.startswith("sqlite"):
+    connect_args["check_same_thread"] = False
+
+engine = create_engine(DATABASE_URL, echo=False, connect_args=connect_args, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 

@@ -1,0 +1,50 @@
+# ──────────────────────────────────────────────────────────────────────────
+# systemd Service — AI AppSec Service (Internal Deployment)
+#
+# Install:
+#   1. Copy this file to /etc/systemd/system/ai-appsec.service
+#   2. systemctl daemon-reload
+#   3. systemctl enable ai-appsec       # start on boot
+#   4. systemctl start ai-appsec        # start now
+#
+# Logs: journalctl -u ai-appsec -f
+# ──────────────────────────────────────────────────────────────────────────
+
+[Unit]
+Description=AI AppSec Service - Security Scanning Platform
+After=network.target
+
+[Service]
+Type=simple
+User=appsec
+Group=appsec
+WorkingDirectory=/opt/ai-appsec-service
+ExecStart=/opt/ai-appsec-service/venv/bin/gunicorn main:app \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --workers 2 \
+    --bind 127.0.0.1:8000 \
+    --timeout 120 \
+    --access-logfile - \
+    --error-logfile -
+
+# Environment variables
+Environment=DATABASE_URL=sqlite:///ai_appsec.db
+# Uncomment and set for PostgreSQL:
+# Environment=DATABASE_URL=postgresql://appsec:password@localhost:5432/ai_appsec
+# Uncomment and set for AI remediation:
+# Environment=PERPLEXITY_API_KEY=pplx-xxxxxxxxxxxxxxxx
+
+# Process management
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/ai-appsec-service
+
+[Install]
+WantedBy=multi-user.target
