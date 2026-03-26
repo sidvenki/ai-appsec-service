@@ -200,7 +200,12 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 def init_db():
     """Create all tables if they don't exist."""
-    Base.metadata.create_all(bind=engine)
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        # Tables may already exist (e.g. race between gunicorn workers)
+        import logging
+        logging.getLogger(__name__).warning(f"Table creation warning (likely already exists): {e}")
 
     # Seed default admin user if no users exist
     db = SessionLocal()

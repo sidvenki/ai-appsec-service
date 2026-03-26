@@ -79,6 +79,13 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     display_name: Optional[str] = None
 
+class AdminUserCreate(BaseModel):
+    username: str
+    email: str
+    display_name: str
+    password: str
+    role: str = "requester"
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # AUTH ROUTES
@@ -569,6 +576,40 @@ def list_users(
             for u in users
         ],
     }
+
+
+@router.post("/admin/users")
+def admin_create_user(
+    payload: AdminUserCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Create a new user with specified role. Admin only."""
+    admin = get_current_user(request, db)
+    if not admin or admin.role != "admin":
+        raise HTTPException(403, "Admin access required")
+
+    valid_roles = {"requester", "scanner", "executive", "admin"}
+    if payload.role not in valid_roles:
+        raise HTTPException(400, f"Invalid role. Must be one of: {valid_roles}")
+
+    if db.query(User).filter(User.username == payload.username).first():
+        raise HTTPException(400, "Username already taken")
+    if db.query(User).filter(User.email == payload.email).first():
+        raise HTTPException(400, "Email already registered")
+
+    user = User(
+        username=payload.username,
+        email=payload.email,
+        display_name=payload.display_name,
+        role=payload.role,
+    )
+    user.set_password(payload.password)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return {"message": f"User {user.username} created", "user_id": user.id, "role": user.role}
 
 
 @router.patch("/admin/users/{user_id}")
