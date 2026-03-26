@@ -28,9 +28,9 @@ logger = logging.getLogger(__name__)
 
 # ── App setup ──────────────────────────────────────────────────────────────
 app = FastAPI(
-    title="AI AppSec Service",
+    title="AI AppSec Scan Service",
     description="Internal SAST/DAST scanning service for traditional and AI/LLM applications",
-    version="0.2.0-alpha",
+    version="0.4.0-alpha",
 )
 
 BASE_DIR = Path(__file__).resolve().parent

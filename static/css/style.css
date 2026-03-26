@@ -79,6 +79,19 @@ body {
     font-weight: 800;
 }
 
+.logo-img {
+    height: 30px;
+    width: auto;
+    object-fit: contain;
+}
+
+.logo-divider {
+    width: 1px;
+    height: 24px;
+    background: var(--border-light);
+    flex-shrink: 0;
+}
+
 .nav-center {
     display: flex;
     gap: 4px;
