@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 # ── App setup ──────────────────────────────────────────────────────────────
 app = FastAPI(
-    title="AI AppSec Scan Service",
+    title="Mastek AI App Scan",
     description="Internal SAST/DAST scanning service for traditional and AI/LLM applications",
     version="0.4.0-alpha",
 )
