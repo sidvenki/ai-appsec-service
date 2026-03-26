@@ -80,16 +80,53 @@ body {
 }
 
 .logo-img {
-    height: 30px;
+    height: 28px;
     width: auto;
     object-fit: contain;
+    flex-shrink: 0;
 }
 
 .logo-divider {
     width: 1px;
-    height: 24px;
+    height: 22px;
     background: var(--border-light);
     flex-shrink: 0;
+}
+
+/* ── Footer ───────────────────────────────────────────────────────────── */
+
+.site-footer {
+    border-top: 1px solid var(--border);
+    background: var(--bg-secondary);
+    padding: 16px 24px;
+    margin-top: 48px;
+}
+
+.footer-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.footer-logo {
+    height: 16px;
+    width: auto;
+    object-fit: contain;
+    opacity: 0.7;
+}
+
+.footer-divider {
+    color: var(--border-light);
+    font-size: 11px;
+}
+
+.footer-tagline {
+    font-style: italic;
+    color: var(--text-muted);
+    font-size: 11px;
 }
 
 .nav-center {
