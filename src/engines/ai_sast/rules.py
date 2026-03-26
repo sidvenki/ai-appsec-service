@@ -32,13 +32,40 @@ LLM_CALL_PATTERNS = [
     r"langchain.*\.run",
     r"\.generate\(",
     r"\.predict\(",
+    r"ChatOpenAI",
+    r"AzureChatOpenAI",
+    r"BedrockChat",
+    r"ChatAnthropic",
+    r"HuggingFaceHub",
+    r"Ollama\(",
+    r"llm\.invoke\(",
+    r"llm\.call\(",
+    r"llm\(",
+    r"chain\.run\(",
+    r"chain\.invoke\(",
+    r"AgentExecutor",
+    r"ReActAgent",
+    r"create_react_agent",
+    r"initialize_agent",
+    r"streamlit.*chat",
+    r"st\.chat_input",
+    r"st\.chat_message",
+    r"groq\..*\.create",
+    r"together\..*\.create",
+    r"cohere\..*\.chat",
+    r"replicate\.run",
+    r"transformers.*pipeline",
+    r"AutoModelForCausalLM",
 ]
 
 # Dangerous exec patterns
 EXEC_PATTERNS = [
     "exec(", "eval(", "subprocess.run(", "subprocess.call(",
     "subprocess.Popen(", "os.system(", "os.popen(",
-    "cursor.execute(", ".execute(",
+    "cursor.execute(", ".execute(", "compile(",
+    "__import__(", "importlib.import_module(",
+    "pickle.loads(", "yaml.load(", "yaml.unsafe_load(",
+    "marshal.loads(", "shelve.open(",
 ]
 
 # Secret patterns in string literals
@@ -60,6 +87,10 @@ HTML_RENDER_PATTERNS = [
     r"dangerouslySetInnerHTML",
     r"Response\(.*(content_type|media_type).*html",
     r"HTMLResponse\(",
+    r"st\.markdown\(.*unsafe_allow_html\s*=\s*True",
+    r"st\.write\(",
+    r"render_template_string\(",
+    r"jinja2.*from_string\(",
 ]
 
 # Agent / tool invocation patterns
@@ -71,6 +102,16 @@ AGENT_TOOL_PATTERNS = [
     r"agent.*\.run\(",
     r"ToolExecutor",
     r"tool_choice",
+    r"AgentExecutor",
+    r"create_react_agent",
+    r"initialize_agent",
+    r"Tool\(",
+    r"StructuredTool",
+    r"@tool",
+    r"tools\s*=\s*\[",
+    r"BaseTool",
+    r"FunctionCallingAgent",
+    r"ReActAgent",
 ]
 
 
@@ -109,31 +150,38 @@ def scan_file(filepath: Path) -> list[dict]:
 
 def _check_prompt_injection(filepath, content, lines, findings):
     """Detect user input interpolated into LLM prompts."""
-    # Pattern: f"...{user_input}..." or "...".format(user_input) near LLM calls
+    # Pattern: f"...{user_input}..." or "...".format(user_input) or template strings near LLM calls
     user_var_patterns = [
         r"request\.\w+", r"user_input", r"user_message", r"query",
         r"body\[", r"data\[", r"params\[", r"form\[",
         r"input_text", r"prompt_text", r"user_prompt",
+        r"st\.text_input", r"st\.text_area", r"st\.chat_input",
+        r"user_query", r"message", r"question", r"chat_input",
+        r"args\[", r"kwargs\[", r"sys\.argv",
+        r"input\(", r"raw_input\(",
+        r"\{user", r"\{query", r"\{message", r"\{input", r"\{prompt",
     ]
 
     for i, line in enumerate(lines, 1):
         # Check for f-strings or format() with user vars
-        is_fstring = "f'" in line or 'f"' in line
+        is_fstring = "f'" in line or 'f"' in line or "f'''" in line or 'f"""' in line
         is_format = ".format(" in line
-        has_concat = "+" in line and ("prompt" in line.lower() or "system" in line.lower())
+        has_concat = "+" in line and ("prompt" in line.lower() or "system" in line.lower() or "message" in line.lower())
+        is_template = "Template(" in line or ".substitute(" in line or "PromptTemplate" in line
+        is_join = ".join(" in line and ("prompt" in line.lower() or "message" in line.lower())
 
-        if is_fstring or is_format or has_concat:
+        if is_fstring or is_format or has_concat or is_template or is_join:
             for uvp in user_var_patterns:
                 if re.search(uvp, line, re.IGNORECASE):
-                    # Check proximity to LLM calls (within 20 lines)
-                    context_start = max(0, i - 10)
-                    context_end = min(len(lines), i + 10)
+                    # Check proximity to LLM calls (within 30 lines)
+                    context_start = max(0, i - 15)
+                    context_end = min(len(lines), i + 15)
                     context_block = "\n".join(lines[context_start:context_end])
 
                     has_llm_call = any(
                         re.search(p, context_block) for p in LLM_CALL_PATTERNS
                     )
-                    if has_llm_call or "prompt" in line.lower() or "system" in line.lower():
+                    if has_llm_call or "prompt" in line.lower() or "system" in line.lower() or "template" in line.lower() or "instruction" in line.lower():
                         cls = classify_ai_sast("prompt_injection_sink")
                         findings.append({
                             **cls,
