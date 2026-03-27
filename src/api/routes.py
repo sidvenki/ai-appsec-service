@@ -71,6 +71,11 @@ class CertificationCreate(BaseModel):
     notes: Optional[str] = None
     valid_days: Optional[int] = 365
 
+class TriageRequest(BaseModel):
+    verdict: str  # true_positive / false_positive
+    analyst_severity: Optional[str] = None  # Critical / High / Medium / Low (required for true_positive)
+    notes: Optional[str] = None
+
 class AIAssistRequest(BaseModel):
     finding_id: int
 
@@ -234,10 +239,12 @@ def get_scan_request(scan_request_id: int, db: Session = Depends(get_db)):
             "p3": sum(1 for f in findings if f.severity == "P3"),
             "traditional": sum(1 for f in findings if f.category == "Traditional"),
             "ai_llm": sum(1 for f in findings if f.category == "AI/LLM"),
+            "pending_triage": sum(1 for f in findings if f.status == "pending_triage"),
             "open": sum(1 for f in findings if f.status == "open"),
             "fixed": sum(1 for f in findings if f.status == "fixed"),
             "verified": sum(1 for f in findings if f.status == "verified"),
             "closed": sum(1 for f in findings if f.status == "closed"),
+            "false_positive": sum(1 for f in findings if f.status == "false_positive"),
         }
 
     # Get certifications
@@ -309,6 +316,7 @@ def list_scan_requests(request: Request, db: Session = Depends(get_db)):
             findings = db.query(Finding).filter(Finding.scan_run_id == latest_run.id).all()
             finding_counts = {
                 "total": len(findings),
+                "pending_triage": sum(1 for f in findings if f.status == "pending_triage"),
                 "open": sum(1 for f in findings if f.status == "open"),
                 "closed": sum(1 for f in findings if f.status == "closed"),
             }
@@ -392,6 +400,8 @@ def get_findings(scan_run_id: int, db: Session = Depends(get_db)):
             {
                 "id": f.id,
                 "severity": f.severity,
+                "engine_severity": f.engine_severity,
+                "analyst_severity": f.analyst_severity,
                 "category": f.category,
                 "risk_type": f.risk_type,
                 "owasp_llm_id": f.owasp_llm_id,
@@ -402,6 +412,10 @@ def get_findings(scan_run_id: int, db: Session = Depends(get_db)):
                 "location": f.location,
                 "evidence_snippet": f.evidence_snippet,
                 "status": f.status,
+                "triage_verdict": f.triage_verdict,
+                "triage_notes": f.triage_notes,
+                "triaged_at": str(f.triaged_at) if f.triaged_at else None,
+                "fingerprint": f.fingerprint,
                 "fix_notes": f.fix_notes,
                 "verification_notes": f.verification_notes,
                 "status_updated_at": str(f.status_updated_at) if f.status_updated_at else None,
@@ -436,7 +450,7 @@ def update_finding_status(
         raise HTTPException(404, "Finding not found")
 
     new_status = payload.status.lower()
-    valid_statuses = {"open", "fixed", "verified", "closed"}
+    valid_statuses = {"pending_triage", "open", "fixed", "verified", "closed", "false_positive"}
     if new_status not in valid_statuses:
         raise HTTPException(400, f"Invalid status. Must be one of: {valid_statuses}")
 
@@ -459,6 +473,10 @@ def update_finding_status(
             # Reopen
             finding.fix_notes = None
             finding.verification_notes = None
+        elif new_status == "pending_triage" and current == "false_positive":
+            # Reopen a false_positive back to triage
+            finding.triage_verdict = None
+            finding.triage_notes = None
         else:
             raise HTTPException(400, f"Invalid transition: {current} → {new_status}")
     else:
@@ -470,6 +488,178 @@ def update_finding_status(
     db.commit()
 
     return {"message": f"Finding #{finding_id} updated to {new_status}", "status": new_status}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TRIAGE ROUTES
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/findings/{finding_id}/triage")
+def triage_finding(
+    finding_id: int,
+    payload: TriageRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Triage a finding. Scanner/Admin only."""
+    user = get_current_user(request, db)
+    if not user or user.role not in ("scanner", "admin"):
+        raise HTTPException(403, "Only scanners/admins can triage findings")
+
+    finding = db.query(Finding).filter(Finding.id == finding_id).first()
+    if not finding:
+        raise HTTPException(404, "Finding not found")
+
+    verdict = payload.verdict.lower()
+    if verdict not in ("true_positive", "false_positive"):
+        raise HTTPException(400, "Verdict must be 'true_positive' or 'false_positive'")
+
+    valid_severities = {"Critical", "High", "Medium", "Low"}
+    if verdict == "true_positive":
+        if not payload.analyst_severity or payload.analyst_severity not in valid_severities:
+            raise HTTPException(400, f"analyst_severity is required for true_positive and must be one of: {valid_severities}")
+
+    finding.triage_verdict = verdict
+    finding.triage_notes = payload.notes
+    finding.triaged_by = user.id
+    finding.triaged_at = datetime.datetime.utcnow()
+
+    if verdict == "true_positive":
+        finding.analyst_severity = payload.analyst_severity
+        finding.severity = payload.analyst_severity
+        finding.status = "open"
+    elif verdict == "false_positive":
+        finding.analyst_severity = payload.analyst_severity
+        finding.status = "false_positive"
+
+    finding.status_updated_at = datetime.datetime.utcnow()
+    finding.status_updated_by = user.id
+    db.commit()
+
+    return {"message": f"Finding #{finding_id} triaged as {verdict}", "status": finding.status}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SCAN RUN COMPARISON ROUTES
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/scan-runs/{scan_run_id}/comparison")
+def scan_run_comparison(scan_run_id: int, db: Session = Depends(get_db)):
+    """Compare findings between current scan run and previous scan run."""
+    scan_run = db.query(ScanRun).filter(ScanRun.id == scan_run_id).first()
+    if not scan_run:
+        raise HTTPException(404, "Scan run not found")
+
+    current_findings = (
+        db.query(Finding)
+        .filter(Finding.scan_run_id == scan_run_id)
+        .order_by(Finding.severity.asc(), Finding.category.desc())
+        .all()
+    )
+
+    # Find previous completed scan run for the same scan_request_id
+    previous_run = (
+        db.query(ScanRun)
+        .filter(
+            ScanRun.scan_request_id == scan_run.scan_request_id,
+            ScanRun.id != scan_run_id,
+            ScanRun.status == "completed",
+        )
+        .order_by(ScanRun.id.desc())
+        .first()
+    )
+
+    if not previous_run:
+        # No previous scan - all are new
+        def _finding_dict(f, match_status):
+            return {
+                "id": f.id,
+                "severity": f.severity,
+                "engine_severity": f.engine_severity,
+                "analyst_severity": f.analyst_severity,
+                "category": f.category,
+                "risk_type": f.risk_type,
+                "owasp_llm_id": f.owasp_llm_id,
+                "control_id": f.control_id,
+                "short_title": f.short_title,
+                "description": f.description,
+                "impact": f.impact,
+                "location": f.location,
+                "evidence_snippet": f.evidence_snippet,
+                "status": f.status,
+                "triage_verdict": f.triage_verdict,
+                "triage_notes": f.triage_notes,
+                "fingerprint": f.fingerprint,
+                "match_status": match_status,
+            }
+
+        return {
+            "scan_run_id": scan_run_id,
+            "previous_run_id": None,
+            "new": [_finding_dict(f, "new") for f in current_findings],
+            "recurring": [],
+            "resolved": [],
+        }
+
+    previous_findings = (
+        db.query(Finding)
+        .filter(Finding.scan_run_id == previous_run.id)
+        .all()
+    )
+
+    prev_by_fp = {f.fingerprint: f for f in previous_findings if f.fingerprint}
+    current_fps = {f.fingerprint for f in current_findings if f.fingerprint}
+
+    def _finding_dict(f, match_status, prev_finding=None):
+        d = {
+            "id": f.id,
+            "severity": f.severity,
+            "engine_severity": f.engine_severity,
+            "analyst_severity": f.analyst_severity,
+            "category": f.category,
+            "risk_type": f.risk_type,
+            "owasp_llm_id": f.owasp_llm_id,
+            "control_id": f.control_id,
+            "short_title": f.short_title,
+            "description": f.description,
+            "impact": f.impact,
+            "location": f.location,
+            "evidence_snippet": f.evidence_snippet,
+            "status": f.status,
+            "triage_verdict": f.triage_verdict,
+            "triage_notes": f.triage_notes,
+            "fingerprint": f.fingerprint,
+            "match_status": match_status,
+        }
+        if prev_finding:
+            d["previous_verdict"] = prev_finding.triage_verdict
+            d["previous_severity"] = prev_finding.analyst_severity or prev_finding.severity
+            d["previous_status"] = prev_finding.status
+        return d
+
+    new_findings = []
+    recurring_findings = []
+
+    for f in current_findings:
+        if f.fingerprint and f.fingerprint in prev_by_fp:
+            prev = prev_by_fp[f.fingerprint]
+            recurring_findings.append(_finding_dict(f, "recurring", prev))
+        else:
+            new_findings.append(_finding_dict(f, "new"))
+
+    # Resolved: findings in previous scan not in current
+    resolved_findings = []
+    for f in previous_findings:
+        if f.fingerprint and f.fingerprint not in current_fps:
+            resolved_findings.append(_finding_dict(f, "resolved"))
+
+    return {
+        "scan_run_id": scan_run_id,
+        "previous_run_id": previous_run.id,
+        "new": new_findings,
+        "recurring": recurring_findings,
+        "resolved": resolved_findings,
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -501,11 +691,14 @@ def issue_certification(
     if latest_run:
         open_findings = (
             db.query(Finding)
-            .filter(Finding.scan_run_id == latest_run.id, Finding.status != "closed")
+            .filter(
+                Finding.scan_run_id == latest_run.id,
+                Finding.status.notin_(["closed", "false_positive"]),
+            )
             .count()
         )
         if open_findings > 0:
-            raise HTTPException(400, f"{open_findings} findings are not yet closed. All must be closed before certification.")
+            raise HTTPException(400, f"{open_findings} findings are not yet closed. All must be closed or marked as false positive before certification.")
 
     valid_until = None
     if payload.valid_days:
@@ -820,7 +1013,7 @@ def dashboard_aggregate(request: Request, db: Session = Depends(get_db)):
     )
 
     severity_counts = {"P1": 0, "P2": 0, "P3": 0}
-    status_counts = {"open": 0, "fixed": 0, "verified": 0, "closed": 0}
+    status_counts = {"pending_triage": 0, "open": 0, "fixed": 0, "verified": 0, "closed": 0, "false_positive": 0}
     category_counts = {"Traditional": 0, "AI/LLM": 0}
 
     for f in all_findings:

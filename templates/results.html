@@ -37,16 +37,24 @@
         <div class="metric-label">Total Findings</div>
     </div>
     <div class="metric-card">
-        <div class="metric-value p1" id="m-p1">0</div>
-        <div class="metric-label">P1 Critical</div>
+        <div class="metric-value" style="color: #a855f7;" id="m-triage">0</div>
+        <div class="metric-label">Pending Triage</div>
     </div>
     <div class="metric-card">
-        <div class="metric-value p2" id="m-p2">0</div>
-        <div class="metric-label">P2 High</div>
+        <div class="metric-value" style="color: #ef4444;" id="m-critical">0</div>
+        <div class="metric-label">Critical</div>
     </div>
     <div class="metric-card">
-        <div class="metric-value p3" id="m-p3">0</div>
-        <div class="metric-label">P3 Medium</div>
+        <div class="metric-value" style="color: #f59e0b;" id="m-high">0</div>
+        <div class="metric-label">High</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value" style="color: #eab308;" id="m-medium">0</div>
+        <div class="metric-label">Medium</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value" style="color: #22c55e;" id="m-low">0</div>
+        <div class="metric-label">Low</div>
     </div>
     <div class="metric-card">
         <div class="metric-value" style="color: var(--p1);" id="m-open">0</div>
@@ -163,6 +171,7 @@ let findings = [];
 let selectedFindingIdx = -1;
 let pendingStatusAction = null;
 let pollInterval = null;
+let currentRunId = null;
 
 async function loadResults() {
     try {
@@ -197,9 +206,15 @@ async function loadResults() {
             const statusClass = 'badge-status badge-' + run.status;
             document.getElementById('status-badge').innerHTML =
                 '<span class="' + statusClass + '">' + run.status.toUpperCase() + '</span>';
-            document.getElementById('scan-meta').textContent =
-                'Started: ' + (run.started_at || '—') +
+            let metaHtml = 'Started: ' + (run.started_at || '—') +
                 (run.finished_at ? ' · Finished: ' + run.finished_at : '');
+            if (run.status === 'completed' && currentUser && (currentUser.role === 'scanner' || currentUser.role === 'admin')) {
+                metaHtml += ' &nbsp;<a href="/scanner/comparison/' + run.id + '" style="color: var(--accent); font-size: 12px;">Compare with Previous</a>';
+                if (summary && (summary.pending_triage || 0) > 0) {
+                    metaHtml += ' &nbsp;<a href="/scanner/triage/' + run.id + '" style="color: #a855f7; font-size: 12px;">Triage (' + summary.pending_triage + ')</a>';
+                }
+            }
+            document.getElementById('scan-meta').innerHTML = metaHtml;
 
             if (run.status === 'running' || run.status === 'pending') {
                 document.getElementById('loading-state').innerHTML =
@@ -220,13 +235,23 @@ async function loadResults() {
             if (run.status === 'completed' && summary) {
                 document.getElementById('metrics-row').style.display = 'grid';
                 document.getElementById('m-total').textContent = summary.total || 0;
-                document.getElementById('m-p1').textContent = summary.p1 || 0;
-                document.getElementById('m-p2').textContent = summary.p2 || 0;
-                document.getElementById('m-p3').textContent = summary.p3 || 0;
+                document.getElementById('m-triage').textContent = summary.pending_triage || 0;
                 document.getElementById('m-open').textContent = summary.open || 0;
                 document.getElementById('m-closed').textContent = summary.closed || 0;
 
+                // Count severity from findings (loaded next)
                 await loadFindings(run.id);
+
+                // Update severity metrics after findings are loaded
+                const sevCounts = {Critical: 0, High: 0, Medium: 0, Low: 0};
+                findings.forEach(f => {
+                    const sev = f.analyst_severity || f.severity;
+                    if (sevCounts[sev] !== undefined) sevCounts[sev]++;
+                });
+                document.getElementById('m-critical').textContent = sevCounts.Critical;
+                document.getElementById('m-high').textContent = sevCounts.High;
+                document.getElementById('m-medium').textContent = sevCounts.Medium;
+                document.getElementById('m-low').textContent = sevCounts.Low;
             }
         } else {
             document.getElementById('loading-state').innerHTML =
@@ -239,6 +264,7 @@ async function loadResults() {
 }
 
 async function loadFindings(runId) {
+    currentRunId = runId;
     const resp = await fetch('/api/scan-runs/' + runId + '/findings');
     const data = await resp.json();
     findings = data.findings || [];
@@ -253,18 +279,34 @@ async function loadFindings(runId) {
     }
 
     findings.forEach((f, idx) => {
-        const sevClass = 'badge-' + f.severity.toLowerCase();
+        // Hide false_positive findings from requesters
+        if (currentUser && currentUser.role === 'requester' && f.status === 'false_positive') return;
+
+        const displaySev = f.analyst_severity || f.engine_severity || f.severity;
+        const sevClass = 'badge-' + displaySev.toLowerCase();
         const catClass = f.category === 'Traditional' ? 'badge-traditional' : 'badge-ai';
         const catLabel = f.category === 'Traditional' ? 'TRAD' : 'AI';
-        const statusClass = 'badge-' + f.status;
+        const statusDisplay = f.status.replace('_', ' ').toUpperCase();
+        const statusClass = 'badge-' + f.status.replace('_', '-');
+
+        let statusBadge = '<span class="badge ' + statusClass + '">' + statusDisplay + '</span>';
+        if (f.status === 'pending_triage') {
+            statusBadge = '<span class="badge badge-pending-triage">TRIAGE</span>';
+        }
+        if (f.triage_verdict) {
+            const vBadge = f.triage_verdict === 'true_positive'
+                ? '<span class="badge badge-open" style="font-size: 9px; margin-left: 2px;">TP</span>'
+                : '<span class="badge badge-false-positive" style="font-size: 9px; margin-left: 2px;">FP</span>';
+            statusBadge += vBadge;
+        }
 
         const tr = document.createElement('tr');
         tr.innerHTML =
             '<td style="color: var(--text-muted); font-size: 12px;">' + (idx + 1) + '</td>' +
-            '<td><span class="badge ' + sevClass + '">' + f.severity + '</span></td>' +
+            '<td><span class="badge ' + sevClass + '">' + escapeHtml(displaySev) + '</span></td>' +
             '<td><span class="badge ' + catClass + '">' + catLabel + '</span></td>' +
             '<td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + escapeHtml(f.short_title) + '</td>' +
-            '<td><span class="badge ' + statusClass + '">' + f.status.toUpperCase() + '</span></td>' +
+            '<td>' + statusBadge + '</td>' +
             '<td style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">' + (f.owasp_llm_id || '—') + '</td>';
 
         tr.onclick = () => selectFinding(idx, tr);
@@ -290,18 +332,40 @@ function selectFinding(idx, row) {
     document.getElementById('d-title').textContent = f.short_title;
 
     const tags = document.getElementById('d-tags');
-    const sevClass = 'badge-' + f.severity.toLowerCase();
+    const displaySev = f.analyst_severity || f.engine_severity || f.severity;
+    const sevClass = 'badge-' + displaySev.toLowerCase();
     const catClass = f.category === 'Traditional' ? 'badge-traditional' : 'badge-ai';
-    tags.innerHTML =
-        '<span class="badge ' + sevClass + '">' + f.severity + '</span>' +
-        '<span class="badge ' + catClass + '">' + f.category + '</span>' +
+    let tagsHtml =
+        '<span class="badge ' + sevClass + '">' + escapeHtml(displaySev) + '</span>' +
+        '<span class="badge ' + catClass + '">' + f.category + '</span>';
+
+    // Show engine vs analyst severity if different
+    if (f.engine_severity && f.analyst_severity && f.engine_severity !== f.analyst_severity) {
+        tagsHtml += '<span class="badge" style="background: rgba(255,255,255,0.06); color: var(--text-muted); font-size: 10px;">Engine: ' + escapeHtml(f.engine_severity) + '</span>';
+    }
+
+    tagsHtml +=
         (f.owasp_llm_id ? '<span class="badge" style="background: rgba(255,255,255,0.06); color: var(--text-secondary);">' + f.owasp_llm_id + '</span>' : '') +
         (f.control_id ? '<span class="badge" style="background: rgba(255,255,255,0.06); color: var(--text-secondary);">' + f.control_id + '</span>' : '');
+    tags.innerHTML = tagsHtml;
 
     // Status area with role-based actions
     const statusArea = document.getElementById('d-status-area');
-    const statusClass = 'badge-' + f.status;
-    let statusHtml = '<span class="badge ' + statusClass + '" style="font-size: 12px;">' + f.status.toUpperCase() + '</span>';
+    const statusDisplay = f.status.replace('_', ' ').toUpperCase();
+    const statusBadgeClass = 'badge-' + f.status.replace('_', '-');
+    let statusHtml = '<span class="badge ' + statusBadgeClass + '" style="font-size: 12px;">' + statusDisplay + '</span>';
+
+    // Show triage verdict badge
+    if (f.triage_verdict) {
+        const verdictLabel = f.triage_verdict === 'true_positive' ? 'True Positive' : 'False Positive';
+        const verdictClass = f.triage_verdict === 'true_positive' ? 'badge-open' : 'badge-false-positive';
+        statusHtml += ' <span class="badge ' + verdictClass + '" style="font-size: 11px;">' + verdictLabel + '</span>';
+    }
+
+    // Triage notes
+    if (f.triage_notes) {
+        statusHtml += '<div style="margin-top: 6px; font-size: 12px; color: var(--text-secondary);"><strong>Triage notes:</strong> ' + escapeHtml(f.triage_notes) + '</div>';
+    }
 
     if (f.fix_notes) {
         statusHtml += '<div style="margin-top: 6px; font-size: 12px; color: var(--text-secondary);"><strong>Fix notes:</strong> ' + escapeHtml(f.fix_notes) + '</div>';
@@ -317,6 +381,9 @@ function selectFinding(idx, row) {
             statusHtml += '<button class="btn btn-warning btn-xs" onclick="openStatusModal(' + f.id + ', \'fixed\', \'Mark as Fixed\')">Mark as Fixed</button>';
         }
         if ((currentUser.role === 'scanner' || currentUser.role === 'admin')) {
+            if (f.status === 'pending_triage') {
+                statusHtml += '<a href="/scanner/triage/' + currentRunId + '" class="btn btn-secondary btn-xs" style="border-color: #a855f7; color: #a855f7;">Open Triage</a>';
+            }
             if (f.status === 'fixed') {
                 statusHtml += '<button class="btn btn-primary btn-xs" onclick="openStatusModal(' + f.id + ', \'verified\', \'Verify Fix\')">Verify</button>';
                 statusHtml += '<button class="btn btn-secondary btn-xs" onclick="openStatusModal(' + f.id + ', \'open\', \'Reopen Finding\')">Reopen</button>';
@@ -326,6 +393,9 @@ function selectFinding(idx, row) {
             }
             if (f.status === 'closed') {
                 statusHtml += '<button class="btn btn-secondary btn-xs" onclick="openStatusModal(' + f.id + ', \'open\', \'Reopen Finding\')">Reopen</button>';
+            }
+            if (f.status === 'false_positive') {
+                statusHtml += '<button class="btn btn-secondary btn-xs" onclick="openStatusModal(' + f.id + ', \'pending_triage\', \'Reopen for Triage\')">Reopen for Triage</button>';
             }
         }
         statusHtml += '</div>';

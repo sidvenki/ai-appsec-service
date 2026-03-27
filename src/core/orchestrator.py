@@ -14,6 +14,7 @@ run_scan(scan_request_id):
 """
 
 import datetime
+import hashlib
 import json
 import logging
 import os
@@ -183,10 +184,17 @@ def run_scan(scan_request_id: int, initiated_by: int = None):
 
         # ── 6. Persist findings ────────────────────────────────────────
         logger.info(f"Persisting {len(all_findings_data)} findings...")
+        new_findings = []
         for fd in all_findings_data:
+            control_id = fd.get("control_id") or ""
+            location = fd.get("location") or ""
+            fingerprint = hashlib.md5((control_id + "||" + location).encode()).hexdigest()
+            engine_sev = fd.get("severity", "P3")
+
             finding = Finding(
                 scan_run_id=scan_run.id,
-                severity=fd.get("severity", "P3"),
+                severity=engine_sev,
+                engine_severity=engine_sev,
                 category=fd.get("category", "Traditional"),
                 risk_type=fd.get("risk_type", "Unknown"),
                 owasp_llm_id=fd.get("owasp_llm_id"),
@@ -196,8 +204,51 @@ def run_scan(scan_request_id: int, initiated_by: int = None):
                 impact=fd.get("impact", ""),
                 location=fd.get("location", ""),
                 evidence_snippet=fd.get("evidence_snippet", "")[:2000],
+                status="pending_triage",
+                fingerprint=fingerprint,
             )
             db.add(finding)
+            new_findings.append(finding)
+
+        db.flush()  # assign IDs to new findings
+
+        # ── 6b. Rescan matching – copy triage from previous scan ──────
+        previous_run = (
+            db.query(ScanRun)
+            .filter(
+                ScanRun.scan_request_id == scan_request_id,
+                ScanRun.id != scan_run.id,
+                ScanRun.status == "completed",
+            )
+            .order_by(ScanRun.id.desc())
+            .first()
+        )
+
+        if previous_run:
+            prev_findings = (
+                db.query(Finding)
+                .filter(Finding.scan_run_id == previous_run.id)
+                .all()
+            )
+            prev_by_fp = {f.fingerprint: f for f in prev_findings if f.fingerprint}
+
+            for finding in new_findings:
+                if finding.fingerprint and finding.fingerprint in prev_by_fp:
+                    prev = prev_by_fp[finding.fingerprint]
+                    if prev.triage_verdict:
+                        finding.triage_verdict = prev.triage_verdict
+                        finding.analyst_severity = prev.analyst_severity
+                        finding.triage_notes = prev.triage_notes
+                        finding.triaged_by = prev.triaged_by
+                        finding.triaged_at = prev.triaged_at
+                        if prev.analyst_severity:
+                            finding.severity = prev.analyst_severity
+                        if prev.triage_verdict == "true_positive":
+                            finding.status = "open"
+                        elif prev.triage_verdict == "false_positive":
+                            finding.status = "false_positive"
+
+            logger.info(f"Rescan matching: checked {len(new_findings)} findings against {len(prev_findings)} previous findings")
 
         # ── 7. Mark completed ──────────────────────────────────────────
         scan_run.status = "completed"

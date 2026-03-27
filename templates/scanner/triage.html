@@ -1,0 +1,436 @@
+{% extends "base.html" %}
+{% set active_page = 'scanner' %}
+{% block title %}Triage Queue{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="flex-between">
+        <div>
+            <h1>Triage Queue</h1>
+            <p id="triage-subtitle">Loading findings for scan run #{{ scan_run_id }}...</p>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <a href="/scanner" class="btn btn-secondary btn-sm">Back to Queue</a>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk action bar -->
+<div class="bulk-action-bar" id="bulk-bar" style="display: none;">
+    <div class="info" id="bulk-info">0 findings pending triage</div>
+    <button class="btn btn-warning btn-xs" onclick="bulkTriageTP()">Triage All Remaining as True Positive</button>
+</div>
+
+<!-- Results Layout: Table + Detail Panel -->
+<div class="results-layout" id="results-layout" style="display:none;">
+    <!-- Findings Table -->
+    <div class="card" style="padding: 0; overflow: hidden;">
+        <div style="overflow-x: auto;">
+            <table class="findings-table">
+                <thead>
+                    <tr>
+                        <th style="width: 40px;">#</th>
+                        <th style="width: 55px;">Engine Sev</th>
+                        <th style="width: 55px;">Cat</th>
+                        <th>Title</th>
+                        <th style="width: 70px;">Match</th>
+                    </tr>
+                </thead>
+                <tbody id="findings-body">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Detail Panel -->
+    <div class="detail-panel" id="detail-panel">
+        <div class="empty-state" id="detail-empty">
+            Select a finding from the table to triage
+        </div>
+        <div id="detail-content" style="display:none;">
+            <h3 id="d-title"></h3>
+            <div class="detail-tags" id="d-tags"></div>
+
+            <!-- Previous scan info (for recurring findings) -->
+            <div class="previous-scan-info" id="prev-info" style="display: none;">
+                <div class="info-label">Previous Scan Triage</div>
+                <div class="info-row">
+                    <span>Verdict: <strong id="prev-verdict"></strong></span>
+                    <span>Severity: <strong id="prev-severity"></strong></span>
+                </div>
+                <div style="margin-top: 4px; color: #a855f7; font-style: italic;" id="prev-auto-note"></div>
+            </div>
+
+            <div class="detail-section">
+                <div class="label">Description</div>
+                <div class="value" id="d-description"></div>
+            </div>
+
+            <div class="detail-section">
+                <div class="label">Impact</div>
+                <div class="value" id="d-impact"></div>
+            </div>
+
+            <div class="detail-section">
+                <div class="label">Location</div>
+                <div class="value" style="font-family: var(--font-mono); font-size: 12px;" id="d-location"></div>
+            </div>
+
+            <div class="detail-section">
+                <div class="label">Evidence</div>
+                <div class="evidence-box" id="d-evidence"></div>
+            </div>
+
+            <!-- Triage Form -->
+            <div class="triage-form" id="triage-form">
+                <h4>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 11l3 3L22 4"/>
+                        <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
+                    </svg>
+                    Triage Decision
+                </h4>
+
+                <div class="engine-sev-display">
+                    Engine-suggested severity: <strong id="t-engine-sev"></strong>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Verdict</label>
+                    <div class="verdict-buttons" style="margin-top: 6px;">
+                        <button class="verdict-btn" id="btn-tp" onclick="setVerdict('true_positive')">True Positive</button>
+                        <button class="verdict-btn" id="btn-fp" onclick="setVerdict('false_positive')">False Positive</button>
+                    </div>
+                </div>
+
+                <div id="severity-group" style="display: none;">
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Analyst Severity</label>
+                    <select class="severity-select" id="t-severity" style="margin-top: 6px;">
+                        <option value="">Select severity...</option>
+                        <option value="Critical">Critical</option>
+                        <option value="High">High</option>
+                        <option value="Medium">Medium</option>
+                        <option value="Low">Low</option>
+                    </select>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 12px;">
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Notes (optional)</label>
+                    <textarea id="t-notes" placeholder="Add triage notes..." style="width: 100%; min-height: 60px; margin-top: 6px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; color: var(--text-primary); font-family: var(--font-sans); font-size: 13px; resize: vertical;"></textarea>
+                </div>
+
+                <button class="btn btn-primary btn-sm" id="submit-triage-btn" onclick="submitTriage()" style="width: 100%;" disabled>Submit Triage</button>
+            </div>
+
+            <!-- Already triaged info -->
+            <div id="already-triaged" style="display: none; margin-top: 16px;">
+                <div class="previous-scan-info" style="border-color: rgba(16, 185, 129, 0.3); background: rgba(16, 185, 129, 0.08);">
+                    <div class="info-label" style="color: var(--success);">Already Triaged</div>
+                    <div class="info-row">
+                        <span>Verdict: <strong id="at-verdict"></strong></span>
+                        <span>Severity: <strong id="at-severity"></strong></span>
+                    </div>
+                    <div style="margin-top: 4px; color: var(--text-muted); font-size: 12px;" id="at-notes"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading State -->
+<div class="loading" id="loading-state">
+    <div class="spinner"></div>
+    <p>Loading triage queue...</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const scanRunId = {{ scan_run_id }};
+let findings = [];
+let selectedFindingIdx = -1;
+let currentVerdict = null;
+
+async function loadFindings() {
+    try {
+        const resp = await fetch('/api/scan-runs/' + scanRunId + '/findings');
+        if (!resp.ok) throw new Error('Failed to load findings');
+        const data = await resp.json();
+        findings = data.findings || [];
+
+        // Also load comparison data for match info
+        let compData = null;
+        try {
+            const compResp = await fetch('/api/scan-runs/' + scanRunId + '/comparison');
+            if (compResp.ok) compData = await compResp.json();
+        } catch (e) {}
+
+        // Build match map from comparison data
+        const matchMap = {};
+        if (compData) {
+            (compData.new || []).forEach(f => { matchMap[f.id] = { status: 'new' }; });
+            (compData.recurring || []).forEach(f => {
+                matchMap[f.id] = {
+                    status: 'recurring',
+                    previous_verdict: f.previous_verdict,
+                    previous_severity: f.previous_severity,
+                    previous_status: f.previous_status,
+                };
+            });
+        }
+
+        // Attach match info to findings
+        findings.forEach(f => {
+            f._match = matchMap[f.id] || { status: 'new' };
+        });
+
+        document.getElementById('loading-state').style.display = 'none';
+        document.getElementById('triage-subtitle').textContent =
+            `${findings.length} findings · ${findings.filter(f => f.status === 'pending_triage').length} pending triage`;
+
+        const pendingCount = findings.filter(f => f.status === 'pending_triage').length;
+        if (pendingCount > 0) {
+            document.getElementById('bulk-bar').style.display = 'flex';
+            document.getElementById('bulk-info').textContent = pendingCount + ' findings pending triage';
+        }
+
+        renderTable();
+    } catch (err) {
+        document.getElementById('loading-state').innerHTML =
+            '<p style="color: var(--p1);">Error: ' + err.message + '</p>';
+    }
+}
+
+function renderTable() {
+    const tbody = document.getElementById('findings-body');
+    tbody.innerHTML = '';
+
+    if (findings.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No findings to triage.</td></tr>';
+        document.getElementById('results-layout').style.display = 'grid';
+        return;
+    }
+
+    findings.forEach((f, idx) => {
+        const engineSev = f.engine_severity || f.severity;
+        const sevClass = 'badge-' + engineSev.toLowerCase();
+        const catClass = f.category === 'Traditional' ? 'badge-traditional' : 'badge-ai';
+        const catLabel = f.category === 'Traditional' ? 'TRAD' : 'AI';
+        const matchStatus = f._match ? f._match.status : 'new';
+        const matchClass = 'badge-' + matchStatus;
+
+        let titlePrefix = '';
+        if (f.status === 'pending_triage') {
+            titlePrefix = '<span class="badge badge-pending-triage" style="margin-right: 4px; font-size: 9px;">TRIAGE</span>';
+        } else if (f.triage_verdict) {
+            const vClass = f.triage_verdict === 'true_positive' ? 'badge-open' : 'badge-false-positive';
+            titlePrefix = '<span class="badge ' + vClass + '" style="margin-right: 4px; font-size: 9px;">' + (f.triage_verdict === 'true_positive' ? 'TP' : 'FP') + '</span>';
+        }
+
+        const tr = document.createElement('tr');
+        if (f.status !== 'pending_triage') {
+            tr.style.opacity = '0.5';
+        }
+        tr.innerHTML =
+            '<td style="color: var(--text-muted); font-size: 12px;">' + (idx + 1) + '</td>' +
+            '<td><span class="badge ' + sevClass + '">' + engineSev + '</span></td>' +
+            '<td><span class="badge ' + catClass + '">' + catLabel + '</span></td>' +
+            '<td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + titlePrefix + escapeHtml(f.short_title) + '</td>' +
+            '<td><span class="badge match-badge ' + matchClass + '">' + matchStatus.toUpperCase() + '</span></td>';
+
+        tr.onclick = () => selectFinding(idx, tr);
+        tbody.appendChild(tr);
+    });
+
+    document.getElementById('results-layout').style.display = 'grid';
+
+    // Auto-select first pending triage finding
+    const firstPending = findings.findIndex(f => f.status === 'pending_triage');
+    if (firstPending >= 0) {
+        selectFinding(firstPending, tbody.querySelectorAll('tr')[firstPending]);
+    } else if (findings.length > 0) {
+        selectFinding(0, tbody.querySelector('tr'));
+    }
+}
+
+function selectFinding(idx, row) {
+    document.querySelectorAll('.findings-table tbody tr').forEach(r => r.classList.remove('selected'));
+    if (row) row.classList.add('selected');
+
+    selectedFindingIdx = idx;
+    currentVerdict = null;
+    const f = findings[idx];
+    document.getElementById('detail-empty').style.display = 'none';
+    document.getElementById('detail-content').style.display = 'block';
+
+    document.getElementById('d-title').textContent = f.short_title;
+
+    const tags = document.getElementById('d-tags');
+    const engineSev = f.engine_severity || f.severity;
+    const sevClass = 'badge-' + engineSev.toLowerCase();
+    const catClass = f.category === 'Traditional' ? 'badge-traditional' : 'badge-ai';
+    tags.innerHTML =
+        '<span class="badge ' + sevClass + '">' + engineSev + '</span>' +
+        '<span class="badge ' + catClass + '">' + f.category + '</span>' +
+        (f.owasp_llm_id ? '<span class="badge" style="background: rgba(255,255,255,0.06); color: var(--text-secondary);">' + f.owasp_llm_id + '</span>' : '') +
+        (f.control_id ? '<span class="badge" style="background: rgba(255,255,255,0.06); color: var(--text-secondary);">' + f.control_id + '</span>' : '');
+
+    // Previous scan info
+    const prevInfo = document.getElementById('prev-info');
+    if (f._match && f._match.status === 'recurring') {
+        prevInfo.style.display = 'block';
+        document.getElementById('prev-verdict').textContent = f._match.previous_verdict || '—';
+        document.getElementById('prev-severity').textContent = f._match.previous_severity || '—';
+        const autoNote = document.getElementById('prev-auto-note');
+        if (f.triage_verdict && f.status !== 'pending_triage') {
+            autoNote.textContent = 'Auto-triaged from previous scan';
+            autoNote.style.display = 'block';
+        } else {
+            autoNote.style.display = 'none';
+        }
+    } else {
+        prevInfo.style.display = 'none';
+    }
+
+    document.getElementById('d-description').textContent = f.description || '—';
+    document.getElementById('d-impact').textContent = f.impact || '—';
+    document.getElementById('d-location').textContent = f.location || '—';
+    document.getElementById('d-evidence').textContent = f.evidence_snippet || 'No evidence captured';
+
+    // Triage form
+    const triageForm = document.getElementById('triage-form');
+    const alreadyTriaged = document.getElementById('already-triaged');
+
+    if (f.status === 'pending_triage') {
+        triageForm.style.display = 'block';
+        alreadyTriaged.style.display = 'none';
+        document.getElementById('t-engine-sev').textContent = engineSev;
+        document.getElementById('t-engine-sev').className = '';
+
+        // Reset form
+        document.getElementById('btn-tp').className = 'verdict-btn';
+        document.getElementById('btn-fp').className = 'verdict-btn';
+        document.getElementById('severity-group').style.display = 'none';
+        document.getElementById('t-severity').value = '';
+        document.getElementById('t-notes').value = '';
+        document.getElementById('submit-triage-btn').disabled = true;
+
+        // Pre-select severity based on engine severity mapping
+        const sevMap = {'P1': 'Critical', 'P2': 'High', 'P3': 'Medium'};
+        if (sevMap[engineSev]) {
+            document.getElementById('t-severity').value = sevMap[engineSev];
+        }
+    } else {
+        triageForm.style.display = 'none';
+        if (f.triage_verdict) {
+            alreadyTriaged.style.display = 'block';
+            document.getElementById('at-verdict').textContent = f.triage_verdict.replace('_', ' ');
+            document.getElementById('at-severity').textContent = f.analyst_severity || f.severity;
+            document.getElementById('at-notes').textContent = f.triage_notes ? 'Notes: ' + f.triage_notes : '';
+        } else {
+            alreadyTriaged.style.display = 'none';
+        }
+    }
+}
+
+function setVerdict(verdict) {
+    currentVerdict = verdict;
+    const btnTp = document.getElementById('btn-tp');
+    const btnFp = document.getElementById('btn-fp');
+    const sevGroup = document.getElementById('severity-group');
+
+    btnTp.className = 'verdict-btn';
+    btnFp.className = 'verdict-btn';
+
+    if (verdict === 'true_positive') {
+        btnTp.className = 'verdict-btn active-tp';
+        sevGroup.style.display = 'block';
+    } else {
+        btnFp.className = 'verdict-btn active-fp';
+        sevGroup.style.display = 'none';
+    }
+
+    document.getElementById('submit-triage-btn').disabled = false;
+}
+
+async function submitTriage() {
+    if (selectedFindingIdx < 0 || !currentVerdict) return;
+    const f = findings[selectedFindingIdx];
+
+    const severity = document.getElementById('t-severity').value;
+    if (currentVerdict === 'true_positive' && !severity) {
+        showToast('Please select an analyst severity', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('submit-triage-btn');
+    btn.disabled = true;
+    btn.textContent = 'Submitting...';
+
+    try {
+        const body = {
+            verdict: currentVerdict,
+            notes: document.getElementById('t-notes').value || null,
+        };
+        if (currentVerdict === 'true_positive') {
+            body.analyst_severity = severity;
+        }
+
+        const resp = await fetch(`/api/findings/${f.id}/triage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (!resp.ok) {
+            const err = await resp.json();
+            throw new Error(err.detail || 'Triage failed');
+        }
+        showToast(`Finding #${f.id} triaged as ${currentVerdict.replace('_', ' ')}`, 'success');
+        await loadFindings();
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Submit Triage';
+    }
+}
+
+async function bulkTriageTP() {
+    const pending = findings.filter(f => f.status === 'pending_triage');
+    if (pending.length === 0) {
+        showToast('No findings pending triage', 'error');
+        return;
+    }
+    if (!confirm(`Triage all ${pending.length} remaining findings as True Positive with engine severity?`)) return;
+
+    const sevMap = {'P1': 'Critical', 'P2': 'High', 'P3': 'Medium'};
+    let success = 0;
+    let failed = 0;
+
+    for (const f of pending) {
+        const engineSev = f.engine_severity || f.severity;
+        const analystSev = sevMap[engineSev] || 'Medium';
+        try {
+            const resp = await fetch(`/api/findings/${f.id}/triage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    verdict: 'true_positive',
+                    analyst_severity: analystSev,
+                    notes: 'Bulk triaged as true positive',
+                }),
+            });
+            if (resp.ok) success++;
+            else failed++;
+        } catch (e) {
+            failed++;
+        }
+    }
+
+    showToast(`Bulk triage: ${success} succeeded, ${failed} failed`, success > 0 ? 'success' : 'error');
+    await loadFindings();
+}
+
+loadFindings();
+</script>
+{% endblock %}

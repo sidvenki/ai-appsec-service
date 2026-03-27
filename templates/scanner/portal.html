@@ -24,6 +24,7 @@
     <button class="filter-btn" onclick="setFilter('submitted')">Submitted</button>
     <button class="filter-btn" onclick="setFilter('completed')">Completed</button>
     <button class="filter-btn" onclick="setFilter('needs-review')">Needs Review</button>
+    <button class="filter-btn" onclick="setFilter('pending-triage')">Pending Triage</button>
 </div>
 
 <div id="content-area">
@@ -54,6 +55,11 @@ function renderTable() {
             const f = r.findings || {};
             return r.status === 'completed' && (f.total || 0) > 0 && !r.certified;
         });
+    } else if (currentFilter === 'pending-triage') {
+        filtered = allRequests.filter(r => {
+            const f = r.findings || {};
+            return r.status === 'completed' && (f.pending_triage || 0) > 0;
+        });
     }
 
     const area = document.getElementById('content-area');
@@ -72,13 +78,21 @@ function renderTable() {
         const findings = req.findings || {};
         const openCount = findings.open || 0;
         const totalCount = findings.total || 0;
+        const triageCount = findings.pending_triage || 0;
 
         let findingInfo = '<span style="color: var(--text-muted);">—</span>';
         if (totalCount > 0) {
-            if (openCount === 0) {
+            const parts = [];
+            if (triageCount > 0) {
+                parts.push(`<span style="color: #a855f7;">${triageCount} to triage</span>`);
+            }
+            if (openCount > 0) {
+                parts.push(`<span style="color: var(--p1);">${openCount} open</span>`);
+            }
+            if (parts.length === 0) {
                 findingInfo = `<span style="color: var(--success);">All ${totalCount} closed</span>`;
             } else {
-                findingInfo = `<span style="color: var(--p1);">${openCount} open</span> / ${totalCount}`;
+                findingInfo = parts.join(' · ') + ` / ${totalCount}`;
             }
         }
 
@@ -86,7 +100,13 @@ function renderTable() {
         if (req.status === 'submitted') {
             actions += ` &nbsp;<button class="btn btn-primary btn-xs" onclick="triggerScan(${req.id}, this)">Start Scan</button>`;
         }
-        if (req.status === 'completed' && totalCount > 0 && openCount === 0 && !req.certified) {
+        if (req.status === 'completed' && triageCount > 0 && req.run_id) {
+            actions += ` &nbsp;<a href="/scanner/triage/${req.run_id}" class="btn btn-secondary btn-xs" style="border-color: #a855f7; color: #a855f7;">Triage</a>`;
+        }
+        if (req.status === 'completed' && req.run_id) {
+            actions += ` &nbsp;<a href="/scanner/comparison/${req.run_id}" class="btn btn-secondary btn-xs">Compare</a>`;
+        }
+        if (req.status === 'completed' && totalCount > 0 && openCount === 0 && triageCount === 0 && !req.certified) {
             actions += ` &nbsp;<button class="btn btn-success btn-xs" onclick="issueCert(${req.id})">Certify</button>`;
         }
         if (req.certified) {

@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% set active_page = 'scanner' %}
+{% block title %}Scan Comparison{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="flex-between">
+        <div>
+            <h1>Scan Comparison</h1>
+            <p id="comp-subtitle">Comparing scan run #{{ scan_run_id }} with previous scan...</p>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <a href="/scanner" class="btn btn-secondary btn-sm">Back to Queue</a>
+        </div>
+    </div>
+</div>
+
+<!-- Comparison Tabs -->
+<div class="comparison-tabs" id="comp-tabs">
+    <button class="comparison-tab tab-new active" onclick="switchTab('new', this)">
+        New Findings <span class="tab-count" id="count-new">0</span>
+    </button>
+    <button class="comparison-tab tab-recurring" onclick="switchTab('recurring', this)">
+        Recurring <span class="tab-count" id="count-recurring">0</span>
+    </button>
+    <button class="comparison-tab tab-resolved" onclick="switchTab('resolved', this)">
+        Resolved <span class="tab-count" id="count-resolved">0</span>
+    </button>
+</div>
+
+<!-- New Findings Section -->
+<div class="comparison-section active" id="section-new">
+    <div class="card" style="padding: 0; overflow: hidden;">
+        <div class="section-header section-header-new">New Findings — not seen in the previous scan</div>
+        <div style="overflow-x: auto;">
+            <table class="dashboard-table">
+                <thead>
+                    <tr>
+                        <th style="width: 40px;">#</th>
+                        <th style="width: 55px;">Sev</th>
+                        <th style="width: 55px;">Cat</th>
+                        <th>Title</th>
+                        <th style="width: 80px;">Status</th>
+                        <th style="width: 120px;">Location</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody-new">
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Recurring Findings Section -->
+<div class="comparison-section" id="section-recurring">
+    <div class="card" style="padding: 0; overflow: hidden;">
+        <div class="section-header section-header-recurring">Recurring Findings — found in both scans</div>
+        <div style="overflow-x: auto;">
+            <table class="dashboard-table">
+                <thead>
+                    <tr>
+                        <th style="width: 40px;">#</th>
+                        <th style="width: 55px;">Sev</th>
+                        <th style="width: 55px;">Cat</th>
+                        <th>Title</th>
+                        <th style="width: 80px;">Status</th>
+                        <th style="width: 100px;">Prev Verdict</th>
+                        <th style="width: 100px;">Prev Severity</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody-recurring">
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Resolved Findings Section -->
+<div class="comparison-section" id="section-resolved">
+    <div class="card" style="padding: 0; overflow: hidden;">
+        <div class="section-header section-header-resolved">Resolved Findings — found in previous scan but not in current</div>
+        <div style="overflow-x: auto;">
+            <table class="dashboard-table">
+                <thead>
+                    <tr>
+                        <th style="width: 40px;">#</th>
+                        <th style="width: 55px;">Sev</th>
+                        <th style="width: 55px;">Cat</th>
+                        <th>Title</th>
+                        <th style="width: 80px;">Prev Status</th>
+                        <th style="width: 120px;">Location</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody-resolved">
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Loading State -->
+<div class="loading" id="loading-state">
+    <div class="spinner"></div>
+    <p>Loading comparison data...</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const scanRunId = {{ scan_run_id }};
+
+function switchTab(tab, btn) {
+    document.querySelectorAll('.comparison-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.comparison-section').forEach(s => s.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('section-' + tab).classList.add('active');
+}
+
+function buildRow(f, idx, showPrev) {
+    const sev = f.analyst_severity || f.engine_severity || f.severity;
+    const sevLower = sev.toLowerCase();
+    const sevClass = 'badge-' + sevLower;
+    const catClass = f.category === 'Traditional' ? 'badge-traditional' : 'badge-ai';
+    const catLabel = f.category === 'Traditional' ? 'TRAD' : 'AI';
+    const statusClass = 'badge-' + (f.status || '').replace('_', '-');
+
+    let html = '<tr>';
+    html += '<td style="color: var(--text-muted); font-size: 12px;">' + (idx + 1) + '</td>';
+    html += '<td><span class="badge ' + sevClass + '">' + escapeHtml(sev) + '</span></td>';
+    html += '<td><span class="badge ' + catClass + '">' + catLabel + '</span></td>';
+    html += '<td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + escapeHtml(f.short_title) + '</td>';
+
+    if (showPrev === 'recurring') {
+        html += '<td><span class="badge ' + statusClass + '">' + (f.status || '').toUpperCase().replace('_', ' ') + '</span></td>';
+        const pvClass = f.previous_verdict === 'true_positive' ? 'badge-open' : (f.previous_verdict === 'false_positive' ? 'badge-false-positive' : '');
+        html += '<td>' + (f.previous_verdict ? '<span class="badge ' + pvClass + '">' + escapeHtml(f.previous_verdict.replace('_', ' ')) + '</span>' : '—') + '</td>';
+        html += '<td style="font-size: 12px; color: var(--text-secondary);">' + escapeHtml(f.previous_severity || '—') + '</td>';
+    } else if (showPrev === 'resolved') {
+        html += '<td><span class="badge ' + statusClass + '">' + (f.status || '').toUpperCase().replace('_', ' ') + '</span></td>';
+        html += '<td style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + escapeHtml(f.location || '—') + '</td>';
+    } else {
+        html += '<td><span class="badge ' + statusClass + '">' + (f.status || '').toUpperCase().replace('_', ' ') + '</span></td>';
+        html += '<td style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + escapeHtml(f.location || '—') + '</td>';
+    }
+
+    html += '</tr>';
+    return html;
+}
+
+async function loadComparison() {
+    try {
+        const resp = await fetch('/api/scan-runs/' + scanRunId + '/comparison');
+        if (!resp.ok) throw new Error('Failed to load comparison data');
+        const data = await resp.json();
+
+        document.getElementById('loading-state').style.display = 'none';
+
+        const newFindings = data.new || [];
+        const recurring = data.recurring || [];
+        const resolved = data.resolved || [];
+
+        document.getElementById('count-new').textContent = newFindings.length;
+        document.getElementById('count-recurring').textContent = recurring.length;
+        document.getElementById('count-resolved').textContent = resolved.length;
+
+        if (data.previous_run_id) {
+            document.getElementById('comp-subtitle').textContent =
+                `Scan run #${scanRunId} vs previous run #${data.previous_run_id} · ${newFindings.length} new, ${recurring.length} recurring, ${resolved.length} resolved`;
+        } else {
+            document.getElementById('comp-subtitle').textContent =
+                `Scan run #${scanRunId} — first scan (no previous scan to compare)`;
+        }
+
+        // Populate new findings
+        const tbodyNew = document.getElementById('tbody-new');
+        if (newFindings.length === 0) {
+            tbodyNew.innerHTML = '<tr><td colspan="6" class="empty-state">No new findings.</td></tr>';
+        } else {
+            tbodyNew.innerHTML = newFindings.map((f, i) => buildRow(f, i, 'new')).join('');
+        }
+
+        // Populate recurring findings
+        const tbodyRecurring = document.getElementById('tbody-recurring');
+        if (recurring.length === 0) {
+            tbodyRecurring.innerHTML = '<tr><td colspan="7" class="empty-state">No recurring findings.</td></tr>';
+        } else {
+            tbodyRecurring.innerHTML = recurring.map((f, i) => buildRow(f, i, 'recurring')).join('');
+        }
+
+        // Populate resolved findings
+        const tbodyResolved = document.getElementById('tbody-resolved');
+        if (resolved.length === 0) {
+            tbodyResolved.innerHTML = '<tr><td colspan="6" class="empty-state">No resolved findings.</td></tr>';
+        } else {
+            tbodyResolved.innerHTML = resolved.map((f, i) => buildRow(f, i, 'resolved')).join('');
+        }
+    } catch (err) {
+        document.getElementById('loading-state').innerHTML =
+            '<p style="color: var(--p1);">Error: ' + err.message + '</p>';
+    }
+}
+
+loadComparison();
+</script>
+{% endblock %}

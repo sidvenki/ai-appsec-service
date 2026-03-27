@@ -139,7 +139,7 @@ class Finding(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     scan_run_id = Column(Integer, ForeignKey("scan_runs.id"), nullable=False)
 
-    severity = Column(String(10), nullable=False)       # P1 | P2 | P3
+    severity = Column(String(10), nullable=False)       # P1 | P2 | P3 (display severity)
     category = Column(String(50), nullable=False)       # Traditional | AI/LLM
     risk_type = Column(String(200), nullable=False)     # e.g. "SQL injection", "Prompt injection"
     owasp_llm_id = Column(String(20), nullable=True)    # e.g. LLM01, LLM06 or null
@@ -150,8 +150,19 @@ class Finding(Base):
     location = Column(String(500), nullable=True)       # file:line or URL
     evidence_snippet = Column(Text, nullable=True)      # short code/response excerpt
 
+    # Triage workflow
+    engine_severity = Column(String(10), nullable=True)      # auto-assigned by engine: P1/P2/P3 (kept for reference)
+    analyst_severity = Column(String(20), nullable=True)     # analyst-assigned: Critical/High/Medium/Low
+    triage_verdict = Column(String(20), nullable=True)       # true_positive / false_positive
+    triage_notes = Column(Text, nullable=True)
+    triaged_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    triaged_at = Column(DateTime, nullable=True)
+
+    # Rescan matching
+    fingerprint = Column(String(256), nullable=True, index=True)  # hash of control_id+location for matching across scans
+
     # Status workflow
-    status = Column(String(20), nullable=False, default="open")  # open | fixed | verified | closed
+    status = Column(String(20), nullable=False, default="pending_triage")  # pending_triage | open | fixed | verified | closed | false_positive
     status_updated_at = Column(DateTime, nullable=True)
     status_updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     fix_notes = Column(Text, nullable=True)             # requester's notes when marking fixed
@@ -160,6 +171,7 @@ class Finding(Base):
     # relationships
     scan_run = relationship("ScanRun", back_populates="findings")
     status_updater = relationship("User", foreign_keys=[status_updated_by])
+    triage_user = relationship("User", foreign_keys=[triaged_by])
 
 
 # ---------------------------------------------------------------------------

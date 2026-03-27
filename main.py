@@ -142,6 +142,24 @@ def scanner_portal(request: Request):
     return _render(request, "scanner/portal.html")
 
 
+@app.get("/scanner/triage/{scan_run_id}", response_class=HTMLResponse)
+def triage_page(request: Request, scan_run_id: int):
+    """Triage queue for a specific scan run."""
+    user = _get_user(request)
+    if not user or user["role"] not in ("scanner", "admin"):
+        return RedirectResponse("/login", status_code=302)
+    return _render(request, "scanner/triage.html", {"scan_run_id": scan_run_id})
+
+
+@app.get("/scanner/comparison/{scan_run_id}", response_class=HTMLResponse)
+def comparison_page(request: Request, scan_run_id: int):
+    """Rescan comparison view for a specific scan run."""
+    user = _get_user(request)
+    if not user or user["role"] not in ("scanner", "admin"):
+        return RedirectResponse("/login", status_code=302)
+    return _render(request, "scanner/comparison.html", {"scan_run_id": scan_run_id})
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # EXECUTIVE PAGES
 # ══════════════════════════════════════════════════════════════════════════════
