@@ -125,3 +125,73 @@ def classify_ai_dast(probe_id: str) -> dict:
         "owasp_llm_id": None, "risk_type": "AI/LLM runtime probe",
     })
     return {**mapping, "category": "AI/LLM"}
+
+
+# ---------------------------------------------------------------------------
+# Garak AI-DAST → severity + control_id + OWASP LLM ID
+# ---------------------------------------------------------------------------
+
+GARAK_SEVERITY_MAP: dict[str, dict] = {
+    "prompt_injection": {
+        "severity": "P1", "control_id": "GK-LLM-01",
+        "owasp_llm_id": "LLM01", "risk_type": "Prompt injection (Garak)",
+    },
+    "dan_jailbreak": {
+        "severity": "P1", "control_id": "GK-LLM-01",
+        "owasp_llm_id": "LLM01", "risk_type": "Jailbreak (Garak)",
+    },
+    "encoding_attacks": {
+        "severity": "P1", "control_id": "GK-LLM-01",
+        "owasp_llm_id": "LLM01", "risk_type": "Encoded injection (Garak)",
+    },
+    "hallucination": {
+        "severity": "P2", "control_id": "GK-LLM-09",
+        "owasp_llm_id": "LLM09", "risk_type": "Hallucination (Garak)",
+    },
+    "data_leakage": {
+        "severity": "P1", "control_id": "GK-LLM-02",
+        "owasp_llm_id": "LLM02", "risk_type": "Data leakage (Garak)",
+    },
+    "package_hallucination": {
+        "severity": "P2", "control_id": "GK-LLM-05",
+        "owasp_llm_id": "LLM05", "risk_type": "Package hallucination (Garak)",
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Agentic Radar AI-SAST → severity + control_id + OWASP LLM ID
+# ---------------------------------------------------------------------------
+
+AGENTIC_RADAR_SEVERITY_MAP: dict[str, dict] = {
+    "tool_vulnerability": {
+        "severity": "P1", "control_id": "AR-LLM-06",
+        "owasp_llm_id": "LLM06", "risk_type": "Insecure agent tool (Agentic Radar)",
+    },
+    "prompt_vulnerability": {
+        "severity": "P2", "control_id": "AR-LLM-07",
+        "owasp_llm_id": "LLM07", "risk_type": "System prompt weakness (Agentic Radar)",
+    },
+    "excessive_permissions": {
+        "severity": "P1", "control_id": "AR-LLM-06",
+        "owasp_llm_id": "LLM06", "risk_type": "Excessive agent permissions (Agentic Radar)",
+    },
+}
+
+# ---------------------------------------------------------------------------
+# OWASP Noir SAST → severity + control_id
+# ---------------------------------------------------------------------------
+
+NOIR_SEVERITY_MAP: dict[str, dict] = {
+    "shadow_api": {
+        "severity": "P2", "control_id": "NR-WEB-01",
+        "risk_type": "Shadow API endpoint (Noir)",
+    },
+    "admin_endpoint": {
+        "severity": "P1", "control_id": "NR-WEB-02",
+        "risk_type": "Admin endpoint exposed (Noir)",
+    },
+    "debug_endpoint": {
+        "severity": "P1", "control_id": "NR-WEB-03",
+        "risk_type": "Debug endpoint exposed (Noir)",
+    },
+}

@@ -26,9 +26,12 @@ from pathlib import Path
 from src.models.database import SessionLocal, ScanRequest, ScanRun, Finding
 from src.engines.sast.semgrep_runner import run_semgrep
 from src.engines.sast.bandit_runner import run_bandit
+from src.engines.sast.noir_runner import run_noir
 from src.engines.dast.zap_runner import run_zap
 from src.engines.ai_sast.rules import run_ai_sast
+from src.engines.ai_sast.agentic_radar_runner import run_agentic_radar
 from src.engines.ai_dast.probes import run_ai_dast
+from src.engines.ai_dast.garak_runner import run_garak
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +42,9 @@ def _get_engine_versions() -> dict:
     for tool, cmd in [
         ("semgrep", ["semgrep", "--version"]),
         ("bandit", ["bandit", "--version"]),
+        ("noir", ["noir", "-h"]),
+        ("garak", ["python3", "-m", "garak", "--version"]),
+        ("agentic-radar", ["agentic-radar", "--version"]),
         ("python", ["python3", "--version"]),
     ]:
         try:
@@ -160,6 +166,22 @@ def run_scan(scan_request_id: int, initiated_by: int = None):
                 all_findings_data.extend(ai_sast_findings)
             except Exception as e:
                 logger.error(f"AI-SAST failed: {e}")
+
+            # ── 5e. OWASP Noir – Attack Surface Discovery ────────────
+            logger.info("Running OWASP Noir (attack surface discovery)...")
+            try:
+                noir_findings = run_noir(repo_path)
+                all_findings_data.extend(noir_findings)
+            except Exception as e:
+                logger.error(f"Noir failed: {e}")
+
+            # ── 5f. Agentic Radar – Agentic Workflow Analysis ─────────
+            logger.info("Running Agentic Radar (agentic workflow analysis)...")
+            try:
+                agentic_findings = run_agentic_radar(repo_path)
+                all_findings_data.extend(agentic_findings)
+            except Exception as e:
+                logger.error(f"Agentic Radar failed: {e}")
         else:
             logger.warning("Repo clone failed – skipping all SAST checks")
 
@@ -179,6 +201,14 @@ def run_scan(scan_request_id: int, initiated_by: int = None):
                 all_findings_data.extend(ai_dast_findings)
             except Exception as e:
                 logger.error(f"AI-DAST failed: {e}")
+
+            # ── 5g. Garak – LLM Vulnerability Scanner ─────────────────
+            logger.info("Running Garak (LLM vulnerability scanner)...")
+            try:
+                garak_findings = run_garak(scan_request.env_base_url)
+                all_findings_data.extend(garak_findings)
+            except Exception as e:
+                logger.error(f"Garak failed: {e}")
         else:
             logger.info("No env_base_url – skipping DAST")
 

@@ -12,14 +12,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies (git for repo cloning during scans)
+# Install system dependencies (git for repo cloning, ruby for Noir)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends git curl && \
+    apt-get install -y --no-install-recommends git curl ruby && \
     rm -rf /var/lib/apt/lists/*
+
+# Install OWASP Noir (Crystal binary via snap or prebuilt)
+# Noir is also available as a Ruby gem alternative
+RUN gem install noir --no-document || true
 
 # Copy requirements first for Docker layer caching
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Install AI security scanning engines
+RUN pip install --no-cache-dir garak agentic-radar || true
 
 # Copy application code
 COPY . .
