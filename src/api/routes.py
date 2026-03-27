@@ -86,6 +86,9 @@ class AdminUserCreate(BaseModel):
     password: str
     role: str = "requester"
 
+class AdminPasswordReset(BaseModel):
+    new_password: str
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # AUTH ROUTES
@@ -642,6 +645,31 @@ def update_user(
 
     db.commit()
     return {"message": f"User {user.username} updated", "role": user.role, "is_active": user.is_active}
+
+
+@router.post("/admin/users/{user_id}/reset-password")
+def admin_reset_password(
+    user_id: int,
+    payload: AdminPasswordReset,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Reset a user's password. Admin only."""
+    admin = get_current_user(request, db)
+    if not admin or admin.role != "admin":
+        raise HTTPException(403, "Admin access required")
+
+    if len(payload.new_password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    user.set_password(payload.new_password)
+    db.commit()
+
+    return {"message": f"Password reset for {user.username}"}
 
 
 # ══════════════════════════════════════════════════════════════════════════════

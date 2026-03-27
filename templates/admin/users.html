@@ -53,6 +53,28 @@
     </div>
 </div>
 
+<!-- Reset Password Modal -->
+<div class="modal-overlay" id="resetModal" style="display: none;" onclick="if(event.target===this)closeResetModal()">
+    <div class="modal">
+        <h3>Reset Password</h3>
+        <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 16px;" id="reset-user-label"></p>
+        <div id="resetForm">
+            <div class="form-group">
+                <label>New Password</label>
+                <input type="password" id="reset-password" style="width: 100%;" placeholder="Minimum 6 characters">
+            </div>
+            <div class="form-group">
+                <label>Confirm Password</label>
+                <input type="password" id="reset-password-confirm" style="width: 100%;" placeholder="Re-enter password">
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-secondary btn-sm" onclick="closeResetModal()">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="resetPassword()" id="resetBtn">Reset Password</button>
+        </div>
+    </div>
+</div>
+
 <!-- Role Edit Modal -->
 <div class="modal-overlay" id="editModal" style="display: none;" onclick="if(event.target===this)closeModal()">
     <div class="modal">
@@ -119,7 +141,10 @@ async function loadUsers() {
                 <td><span class="${roleClass}">${u.role.toUpperCase()}</span></td>
                 <td>${statusBadge}</td>
                 <td style="color: var(--text-muted); font-size: 12px;">${u.last_login || 'Never'}</td>
-                <td><button class="btn btn-secondary btn-xs" onclick='openEdit(${JSON.stringify(u)})'>Edit</button></td>
+                <td style="white-space: nowrap;">
+                    <button class="btn btn-secondary btn-xs" onclick='openEdit(${JSON.stringify(u)})'>Edit</button>
+                    <button class="btn btn-secondary btn-xs" style="margin-left: 4px;" onclick='openResetModal(${u.id}, "${escapeHtml(u.username)}")'>Reset PW</button>
+                </td>
             </tr>`;
         });
 
@@ -226,6 +251,59 @@ async function createUser() {
     } finally {
         btn.disabled = false;
         btn.textContent = 'Create User';
+    }
+}
+
+let resetUserId = null;
+
+function openResetModal(userId, username) {
+    resetUserId = userId;
+    document.getElementById('reset-user-label').textContent = 'Resetting password for: ' + username;
+    document.getElementById('reset-password').value = '';
+    document.getElementById('reset-password-confirm').value = '';
+    document.getElementById('resetModal').style.display = 'flex';
+}
+
+function closeResetModal() {
+    document.getElementById('resetModal').style.display = 'none';
+    resetUserId = null;
+}
+
+async function resetPassword() {
+    if (!resetUserId) return;
+    const pw = document.getElementById('reset-password').value;
+    const pwConfirm = document.getElementById('reset-password-confirm').value;
+
+    if (!pw || pw.length < 6) {
+        showToast('Password must be at least 6 characters', 'error');
+        return;
+    }
+    if (pw !== pwConfirm) {
+        showToast('Passwords do not match', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('resetBtn');
+    btn.disabled = true;
+    btn.textContent = 'Resetting...';
+
+    try {
+        const resp = await fetch(`/api/admin/users/${resetUserId}/reset-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ new_password: pw }),
+        });
+        if (!resp.ok) {
+            const err = await resp.json();
+            throw new Error(err.detail || 'Reset failed');
+        }
+        showToast('Password reset successfully', 'success');
+        closeResetModal();
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Reset Password';
     }
 }
 
